@@ -1,235 +1,240 @@
 # Spotify Mini Player
 
-Spotify Mini Player is a VS Code extension with a Spotify-themed sidebar, a mini player panel, keyboard shortcuts, voice control, and Spotify OAuth login.
+> A premium VS Code sidebar and mini-player for Spotify — with keyboard shortcuts, voice control, album art, and full OAuth login.
 
-The extension now has a real account-tier split:
+---
 
-- `Premium` accounts use the Spotify Web API for direct playback control.
-- `Free` accounts switch to desktop mode and control the installed Spotify app through OS media keys.
+## Features
 
-## Current Condition
+- 🎵 **Now Playing** — track title, artist, album art, and live progress bar in the sidebar
+- 🎮 **Playback Controls** — Play/Pause, Next, Previous via SVG icon buttons or keyboard shortcuts
+- 🔊 **Volume Control** — Volume slider and +/− buttons
+- 🎤 **Voice Control** — Trigger playback actions by voice from within VS Code
+- 📡 **Live State Sync** — Playback state refreshes on a timer and when VS Code regains focus
+- 🪟 **Mini Player** — Detachable mini-player panel alongside your code
+- 📊 **Status Bar** — Track name and artist always visible in the bottom bar
+- 🔐 **OAuth PKCE Login** — Secure login with no client secret required
 
-This project is functional and interactive, but it is still an in-development extension rather than a polished Marketplace release.
+---
 
-What currently works:
-
-- OAuth sign-in with Spotify
-- Saving and restoring the refresh token in VS Code secret storage
-- Detecting `free` vs `premium` from the Spotify profile
-- Showing a banner for account tier and playback availability
-- Disconnecting and clearing the saved Spotify session
-- Refreshing playback state from Spotify
-- Sidebar and mini-player webviews
-- Status bar updates
-- Voice control UI
-- An in-sidebar diagnostics card that shows the latest response source and summary
-- Premium playback control through the Spotify Web API
-- Free-account desktop playback actions through Windows media keys or browser/manual fallback
-
-What is intentionally limited:
-
-- Spotify Web API playback endpoints are only used for Premium accounts
-- Free accounts do not call the Premium-only playback API endpoints
-- Free accounts use best-effort fallback behavior:
-  - on Windows, the extension sends OS media keys
-  - on other platforms, it opens Spotify and shows guidance
-- Next, Previous, and Volume follow the same fallback strategy instead of failing silently
-
-## Behavior By Account Type
+## Account Modes
 
 ### Premium
 
-Premium accounts use the Spotify Web API for:
+Uses the **Spotify Web API** directly for:
 
-- Play / Pause
-- Next track
-- Previous track
-- Volume changes
-- Reading current playback state
-- Reading the active device
-- Showing current track info, artist, and album art
-
-The sidebar and status bar stay in sync with the active Spotify device.
+- Play / Pause (responds in ~200–400ms)
+- Next / Previous track
+- Volume control (Spotify app volume)
+- Reading current device, track info, and progress
 
 ### Free
 
-Free accounts automatically switch to desktop mode:
+Automatically switches to **desktop mode**:
 
-- A banner explains that controls use the installed Spotify app through OS media keys
-- Play / Pause uses the same media-control path as keyboard media buttons
-- Next, Previous, and Volume use OS media keys where available
-- If media keys are unavailable, the extension opens Spotify and shows a clear message instead of failing silently
-- The UI still shows account status, connection state, diagnostics, and last action
-- Disconnect still works
+- Play / Pause, Next, Previous use **Windows media keys** (via the OS media session API)
+- Volume controls the **Spotify app audio session** on Windows
+- A clear banner explains the mode; no silent failures
+- Non-Windows platforms open Spotify in the browser as fallback
+
+---
 
 ## Requirements
 
 - VS Code `1.85.0` or newer
-- A Spotify developer app with a Client ID
-- A redirect URI registered in the Spotify dashboard
-- Spotify Premium for direct Web API playback control
+- A [Spotify Developer App](https://developer.spotify.com/dashboard) with a **Client ID**
+- The redirect URI `http://127.0.0.1:17523/callback` registered in your Spotify app
+- **Spotify Premium** for direct Web API playback control (Free accounts work in desktop mode)
+
+---
 
 ## Setup
 
 1. Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Copy the app's Client ID.
-3. In VS Code, set `spotifyPlayer.clientId` to that Client ID.
-4. Make sure the redirect URI matches exactly:
-   - `http://127.0.0.1:17523/callback`
-5. Add the same redirect URI in your Spotify app settings.
-6. Press `F5` to launch the Extension Development Host.
-7. Run `Spotify Player: Connect to Spotify`.
-8. Finish the browser sign-in flow.
+2. Copy the **Client ID**.
+3. In VS Code open **Settings** → search for `spotifyPlayer.clientId` → paste the Client ID.
+4. In the Spotify Dashboard, add this **Redirect URI** exactly:
+   ```
+   http://127.0.0.1:17523/callback
+   ```
+5. Open the Spotify sidebar in VS Code and click **Connect to Spotify**.
+6. Complete the browser sign-in flow.
 
-You can also set the Client ID with the environment variable:
+You can also set the Client ID via an environment variable:
 
-- `SPOTIFY_CLIENT_ID`
+```
+SPOTIFY_CLIENT_ID=your_client_id
+```
+
+---
 
 ## Settings
 
-The extension contributes these settings:
+| Setting | Default | Description |
+|---|---|---|
+| `spotifyPlayer.clientId` | `""` | Spotify app Client ID |
+| `spotifyPlayer.redirectUri` | `http://127.0.0.1:17523/callback` | OAuth redirect URI |
+| `spotifyPlayer.refreshIntervalSeconds` | `15` | State refresh interval (min 5s) |
+| `spotifyPlayer.preferredDevices` | `[]` | Device names to prefer for playback |
 
-- `spotifyPlayer.clientId`
-  - Spotify app Client ID for OAuth login
-- `spotifyPlayer.redirectUri`
-  - Redirect URI used during OAuth
-- `spotifyPlayer.refreshIntervalSeconds`
-  - How often playback state refreshes
-- `spotifyPlayer.preferredDevices`
-  - Optional list of device names to prefer
+---
 
 ## Commands
 
-- `Spotify Player: Connect to Spotify`
-- `Spotify Player: Disconnect`
-- `Spotify Player: Refresh Status`
-- `Spotify Player: Show Sidebar`
-- `Spotify Player: Show Mini Player`
-- `Spotify Player: Play / Pause`
-- `Spotify Player: Next Track`
-- `Spotify Player: Previous Track`
-- `Spotify Player: Volume Up`
-- `Spotify Player: Volume Down`
-- `Spotify Player: Toggle Voice Control`
+| Command | Description |
+|---|---|
+| `Spotify Player: Connect to Spotify` | Start OAuth login |
+| `Spotify Player: Disconnect` | Clear session and sign out |
+| `Spotify Player: Refresh Status` | Manually refresh playback state |
+| `Spotify Player: Show Sidebar` | Open the Spotify sidebar |
+| `Spotify Player: Show Mini Player` | Open the detachable mini player |
+| `Spotify Player: Play / Pause` | Toggle playback |
+| `Spotify Player: Next Track` | Skip to next |
+| `Spotify Player: Previous Track` | Go to previous |
+| `Spotify Player: Volume Up` | Increase volume by 10% |
+| `Spotify Player: Volume Down` | Decrease volume by 10% |
+| `Spotify Player: Toggle Voice Control` | Enable/disable voice commands |
+
+---
 
 ## Keyboard Shortcuts
 
-- `Ctrl + Alt + P`
-- `Ctrl + Alt + Right`
-- `Ctrl + Alt + Left`
+| Shortcut (Windows/Linux) | Shortcut (Mac) | Action |
+|---|---|---|
+| `Ctrl+Alt+P` | `Cmd+Alt+P` | Play / Pause |
+| `Ctrl+Alt+Right` | `Cmd+Alt+Right` | Next Track |
+| `Ctrl+Alt+Left` | `Cmd+Alt+Left` | Previous Track |
 
-## Current UI
+---
 
-The sidebar includes:
+## Performance
 
-- connection status
-- account tier banner
-- active device details
-- now playing info
-- playback controls
-- volume slider
-- voice control entry point
-- last action and error text
-- diagnostics for the latest Spotify payload
-- account-tier messaging that switches between Premium and basic mode
+- **Premium mode:** button response ~200–400ms (Spotify API latency)
+- **Free mode (Windows):** first click ~1.5s (PowerShell boot), subsequent clicks ~50–200ms via persistent shell session
+- State refresh in Premium mode with active playback: **2 API calls** (down from 4)
 
-The mini player uses the same controller state and mirrors the main playback data.
+---
 
-The current source layout is:
+## Security
 
-- `extension.js` for activation, OAuth, state, and playback logic
-- `media/webview.html` for the sidebar and mini-player markup
-- `media/webview.css` for the visuals
-- `media/webview.js` for the frontend state and button wiring
+- OAuth uses **PKCE** — no client secret is required or stored
+- The refresh token is stored in **VS Code's encrypted secret storage** (`context.secrets`)
+- Webviews enforce a **Content Security Policy (CSP)** with nonce-locked scripts
+- OAuth state mismatch (CSRF) **aborts authentication** and surfaces an error
+- Login response messages are **HTML-escaped** to prevent injection
 
-## Disconnect Behavior
-
-Disconnect now:
-
-- clears the saved refresh token from secret storage
-- clears the in-memory access token
-- resets the user/session state
-- returns the UI to a signed-out state
-- updates the status bar and sidebar
-
-If disconnect appears stale, restart the Extension Development Host and try again.
+---
 
 ## Known Limitations
 
-- Spotify's official playback endpoints are Premium-only.
-- Free accounts cannot be controlled through the Spotify Web API in the same way as Premium accounts.
-- The basic fallback depends on the platform and the Spotify client.
-- If there is no active Spotify device, playback details may be incomplete until Spotify is opened on a device.
-- On Windows, the basic fallback uses a temporary PowerShell script to send media keys.
+- Spotify's playback API endpoints (play, pause, next, volume) require **Spotify Premium**
+- Free accounts use OS media keys — this requires Spotify Desktop to be open and playing
+- On non-Windows platforms, Free mode opens Spotify in the browser instead
+- Album art search uses the iTunes API as a fallback when Spotify returns no artwork
+
+---
 
 ## Troubleshooting
 
 ### "Spotify login could not be completed"
 
-Check:
-
-- the redirect URI is exactly `http://127.0.0.1:17523/callback`
-- the same redirect URI is registered in the Spotify dashboard
-- you only clicked Connect once during sign-in
-- the Extension Development Host was not reloaded mid-login
+- Confirm the redirect URI is exactly `http://127.0.0.1:17523/callback`
+- Confirm the same URI is registered in the Spotify developer dashboard
+- Do not reload VS Code or the Extension Host while the browser login is open
 
 ### "Connect to Spotify first"
 
-You are not signed in yet, or the saved session was cleared.
+You are not signed in. Click **Connect to Spotify** in the sidebar.
 
-### "Premium required for playback controls"
+### Buttons do nothing (Free account)
 
-You are signed in with a Free account. The extension is intentionally switching to basic mode.
+Make sure **Spotify Desktop** is open and a song is playing or paused. The OS media session must be active.
 
-### No active device
+### No album art
 
-Open Spotify on one of these first:
+The track art may not be available immediately. Click **Refresh** or wait for the next poll cycle.
 
-- Spotify desktop app
-- Spotify web player
-- Spotify mobile app
+### `source=none` in diagnostics
 
-Then refresh the extension.
+1. Disconnect and reconnect (clears and re-grants scopes).
+2. Start a song in Spotify.
+3. Click **Refresh**.
+4. Check that diagnostics shows `current-playback` or `currently-playing`.
 
-### Diagnostics show `source=none`
-
-The extension could not get a live payload from Spotify yet. Try:
-
-1. Disconnect and reconnect so the updated scopes are granted.
-2. Start playback in the same Spotify account you connected with.
-3. Click `Refresh`.
-4. Check whether the diagnostics card changes to `current-playback`, `currently-playing`, or `recently-played`.
+---
 
 ## Folder Layout
 
-```text
+```
 .
-├── .vscode
+├── .vscode/
 │   └── launch.json
-├── media
+├── media/
 │   ├── icon.svg
-│   ├── webview.css
-│   ├── webview.html
-│   └── webview.js
-├── extension.js
+│   ├── icon128.png        ← 128×128 Marketplace icon
+│   ├── webview.css        ← Glassmorphism design system + responsive layout
+│   ├── webview.html       ← SVG icon controls, CSP, Google Fonts
+│   └── webview.js         ← Frontend state sync and button wiring
+├── extension.js           ← Activation, OAuth, playback logic, persistent PS shell
 ├── package.json
+├── LICENSE
 └── README.md
 ```
 
-## Development Notes
+---
 
-- The extension entrypoint is `extension.js`
-- Webview UI code is split across `media/webview.html`, `media/webview.css`, and `media/webview.js`
-- The Spotify login flow uses PKCE
-- The refresh token is stored in VS Code secret storage
-- Playback state is refreshed on a timer and when the VS Code window regains focus
+## Development
 
-## Run Locally
+### Run Locally
 
 1. Open this folder in VS Code.
-2. Press `F5`.
-3. Use the Spotify sidebar in the Extension Development Host window.
+2. Press `F5` to launch the Extension Development Host.
+3. Use the Spotify sidebar in the new window.
 
-## Packaging
+### Package for Distribution
 
-This repository does not yet include a release pipeline. If you want to package it later, you can use `vsce` after updating publisher metadata in `package.json`.
+```bash
+npm install
+npm run package   # produces spotify-mini-player-x.x.x.vsix
+```
+
+### Publish to Marketplace
+
+1. Create a publisher account at [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage).
+2. Generate a Personal Access Token with **Marketplace publish** scope.
+3. Run:
+   ```bash
+   npx vsce login momanamjad
+   npm run publish
+   ```
+
+> **Before publishing:** replace `media/icon128.png` with your actual 128×128 PNG icon.
+
+---
+
+## Changelog
+
+### v0.2.0
+
+- **Performance:** Persistent PowerShell session — Free mode buttons now respond in ~50–200ms (down from 2–4s)
+- **Performance:** Premium play/pause no longer pre-fetches playback state (saves ~250ms per click)
+- **Performance:** Next/Previous no longer pre-fetches device list (saves ~250ms per click)
+- **Performance:** State refresh uses 2 API calls when playback is active (down from 4)
+- **Performance:** HTML template cached after first read — no blocking I/O on each webview render
+- **Performance:** Removed `transition: all` from global CSS selector — progress bar now animates at 180ms linear
+- **Security:** OAuth state mismatch now aborts authentication (closes CSRF bypass)
+- **Security:** Login response messages are HTML-escaped
+- **UI:** Glassmorphism design system with Inter font, deep-space color palette, and neon accents
+- **UI:** SVG icon controls (play, pause, next, previous, volume, voice)
+- **UI:** Fully responsive down to sub-300px sidebar widths
+- **Packaging:** `.vscodeignore`, `LICENSE`, `publisher`, `repository`, `galleryBanner` added
+
+### v0.1.0
+
+- Initial release: OAuth PKCE login, Premium + Free mode split, sidebar and mini player, voice control, status bar, Windows media key fallback
+
+---
+
+## License
+
+MIT © 2026 Moman Amjad

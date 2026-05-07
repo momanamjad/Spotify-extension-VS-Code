@@ -1,0 +1,162 @@
+{
+  "name": "spotify-mini-player",
+  "displayName": "Spotify Mini Player",
+  "description": "A premium Spotify sidebar and mini-player for VS Code with keyboard shortcuts, voice control, and full OAuth login. Supports Premium API playback and Free desktop fallback.",
+  "version": "0.2.0",
+  "publisher": "momanamjad",
+  "license": "MIT",
+  "icon": "media/icon128.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/momanamjad/spotify-mini-player"
+  },
+  "galleryBanner": {
+    "color": "#05070a",
+    "theme": "dark"
+  },
+  "keywords": [
+    "spotify",
+    "music",
+    "player",
+    "media",
+    "voice control",
+    "sidebar",
+    "now playing"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "spotifyPlayer.connect",
+        "title": "Spotify Player: Connect to Spotify"
+      },
+      {
+        "command": "spotifyPlayer.logout",
+        "title": "Spotify Player: Disconnect"
+      },
+      {
+        "command": "spotifyPlayer.refreshStatus",
+        "title": "Spotify Player: Refresh Status"
+      },
+      {
+        "command": "spotifyPlayer.showSidebar",
+        "title": "Spotify Player: Show Sidebar"
+      },
+      {
+        "command": "spotifyPlayer.showMiniPlayer",
+        "title": "Spotify Player: Show Mini Player"
+      },
+      {
+        "command": "spotifyPlayer.togglePlayPause",
+        "title": "Spotify Player: Play / Pause"
+      },
+      {
+        "command": "spotifyPlayer.nextTrack",
+        "title": "Spotify Player: Next Track"
+      },
+      {
+        "command": "spotifyPlayer.previousTrack",
+        "title": "Spotify Player: Previous Track"
+      },
+      {
+        "command": "spotifyPlayer.volumeUp",
+        "title": "Spotify Player: Volume Up"
+      },
+      {
+        "command": "spotifyPlayer.volumeDown",
+        "title": "Spotify Player: Volume Down"
+      },
+      {
+        "command": "spotifyPlayer.toggleVoiceControl",
+        "title": "Spotify Player: Toggle Voice Control"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "spotifyPlayer.togglePlayPause",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p",
+        "when": "editorTextFocus || terminalFocus || !inputFocus"
+      },
+      {
+        "command": "spotifyPlayer.nextTrack",
+        "key": "ctrl+alt+right",
+        "mac": "cmd+alt+right",
+        "when": "editorTextFocus || terminalFocus || !inputFocus"
+      },
+      {
+        "command": "spotifyPlayer.previousTrack",
+        "key": "ctrl+alt+left",
+        "mac": "cmd+alt+left",
+        "when": "editorTextFocus || terminalFocus || !inputFocus"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "spotifyPlayerSidebar",
+          "title": "Spotify",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "spotifyPlayerSidebar": [
+        {
+          "type": "webview",
+          "id": "spotifyPlayer.sidebarView",
+          "name": "Spotify Web Player"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Spotify Mini Player",
+      "properties": {
+        "spotifyPlayer.clientId": {
+          "type": "string",
+          "default": "",
+          "description": "Spotify app Client ID for OAuth login."
+        },
+        "spotifyPlayer.redirectUri": {
+          "type": "string",
+          "default": "http://127.0.0.1:17523/callback",
+          "description": "Redirect URI registered in your Spotify app settings."
+        },
+        "spotifyPlayer.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "description": "How often (in seconds) to refresh playback state from Spotify. Minimum 5."
+        },
+        "spotifyPlayer.preferredDevices": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional device names to prefer when choosing a playback target."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "echo \"No lint step configured.\"",
+    "test": "echo \"No tests configured.\"",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.1"
+  }
+}

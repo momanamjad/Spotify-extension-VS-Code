@@ -1,0 +1,569 @@
+:root {
+  color-scheme: dark;
+  --bg:            #0d1117;
+  --panel:         #141921;
+  --panel-strong:  #1a2030;
+  --border:        rgba(255, 255, 255, 0.09);
+  --text:          #f0f4f8;
+  --muted:         rgba(200, 215, 230, 0.6);
+  --accent:        #1ed760;
+  --accent-glow:   rgba(30, 215, 96, 0.35);
+  --premium-purple:#8b5cf6;
+  --premium-pink:  #ec4899;
+  --warn:          #fbbf24;
+  --shadow:        0 4px 24px rgba(0, 0, 0, 0.6);
+  --radius:        12px;
+  --glass-border:  1px solid rgba(255, 255, 255, 0.09);
+  --glass-bg:      #141921;
+}
+
+* { 
+  box-sizing: border-box; 
+}
+
+button, .status-dot, .brand-mark, .album-stage-image, .album-stage-glow,
+.status-pill, .progress-fill, .topbar, .player-card, .side-panel,
+.hero-card, .now-playing, .volume, .tier-banner {
+  transition: background 0.25s ease, border-color 0.25s ease,
+    box-shadow 0.25s ease, opacity 0.35s ease, transform 0.2s ease;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+  /* Force our own dark background — never inherit VS Code's sidebar color */
+  background-color: var(--bg) !important;
+  background-image: 
+    radial-gradient(at 20% 10%, rgba(30, 215, 96, 0.08) 0px, transparent 45%),
+    radial-gradient(at 80% 5%,  rgba(139, 92, 246, 0.08) 0px, transparent 45%);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.album-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.album-stage-image,
+.album-stage-glow,
+.album-stage-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+.album-stage-image,
+.album-stage-glow {
+  opacity: 0;
+  background-size: cover;
+  background-position: center;
+  transition: opacity 1s ease, transform 1.5s ease;
+}
+
+.album-stage-image {
+  transform: scale(1.1);
+  filter: blur(40px) brightness(0.4);
+}
+
+.album-stage-glow {
+  transform: scale(1.2);
+  filter: blur(80px) saturate(1.5);
+  opacity: 0;
+}
+
+.album-stage-overlay {
+  background: radial-gradient(circle at center, transparent 0%, rgba(5, 7, 10, 0.8) 100%);
+}
+
+body.has-album-art .album-stage-image {
+  opacity: 0.6;
+  transform: scale(1.05);
+}
+
+body.has-album-art .album-stage-glow {
+  opacity: 0.3;
+}
+
+.chrome {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 20px;
+  gap: 20px;
+  animation: enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.topbar,
+.player-card,
+.side-panel,
+.status-block, 
+.last-action, 
+.tips, 
+.voice-card, 
+.debug-card,
+.now-playing,
+.volume,
+.hero-card,
+.tier-banner {
+  /* Solid dark backgrounds — avoid inheriting VS Code's sidebar tint via backdrop-filter */
+  background: var(--glass-bg);
+  border: var(--glass-border);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), #15803d);
+  box-shadow: 0 0 20px var(--accent-glow);
+  position: relative;
+}
+
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.title { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+
+.topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+button {
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  border: var(--glass-border);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button.primary {
+  background: linear-gradient(135deg, var(--accent), #16a34a);
+  color: #000;
+  border: none;
+  box-shadow: 0 4px 15px var(--accent-glow);
+}
+
+button.primary:hover {
+  background: linear-gradient(135deg, #22c55e, #15803d);
+  box-shadow: 0 6px 20px var(--accent-glow);
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 20px;
+  flex: 1;
+}
+
+.player-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.hero-card {
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(30, 215, 96, 0.1), rgba(139, 92, 246, 0.1));
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-copy h1 {
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1;
+  margin: 8px 0;
+  letter-spacing: -0.04em;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+#trackArtist {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.hero-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.status-pill {
+  padding: 6px 12px;
+  background: rgba(30, 215, 96, 0.15);
+  border: 1px solid rgba(30, 215, 96, 0.3);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.now-playing {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+}
+
+#albumArt {
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.track-copy h2 {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.tier-banner {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tier-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0;
+}
+
+.tier-copy {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.progress-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.progress-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #4ade80);
+  box-shadow: 0 0 15px var(--accent-glow);
+  width: 0%;
+  transition: width 180ms linear;
+}
+
+.progress-seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.control {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.control.primary {
+  width: 64px;
+  height: 64px;
+}
+
+.volume-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.volume input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.status-block {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4b5563;
+}
+
+.status-dot.live {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(30, 215, 96, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(30, 215, 96, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(30, 215, 96, 0); }
+}
+
+.equalizer {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 24px;
+}
+
+.equalizer span {
+  width: 4px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+@keyframes enter {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Premium Mode Overrides */
+body.premium-mode {
+  --accent: var(--premium-purple);
+  --accent-glow: rgba(139, 92, 246, 0.4);
+}
+
+body.premium-mode .brand-mark {
+  background: linear-gradient(135deg, var(--premium-purple), var(--premium-pink));
+}
+
+body.premium-mode .progress-fill {
+  background: linear-gradient(90deg, var(--premium-purple), var(--premium-pink));
+}
+
+/* RESPONSIVENESS */
+
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 1fr; }
+  .side-panel { display: none; }
+}
+
+@media (max-width: 600px) {
+  .chrome { padding: 12px; gap: 12px; }
+  .player-card { padding: 16px; gap: 16px; }
+  .hero-card { flex-direction: column; align-items: flex-start; }
+  .hero-meta { align-items: flex-start; margin-top: 12px; }
+  .hero-copy h1 { font-size: 24px; }
+}
+
+/* ULTRA SMALL SCREENS (< 300px) */
+@media (max-width: 300px) {
+  .chrome { padding: 12px; gap: 12px; }
+  .topbar { 
+    padding: 12px; 
+    flex-direction: column; 
+    align-items: center; 
+    text-align: center;
+  }
+  
+  .brand { 
+    flex-direction: column; 
+    gap: 8px; 
+  }
+  
+  .brand-mark { width: 36px; height: 36px; }
+  .eyebrow { display: none; }
+  .title { font-size: 14px; text-align: center; }
+
+  .topbar-actions { 
+    width: 100%; 
+    justify-content: center; 
+    margin-top: 12px; 
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(36px, 1fr));
+    gap: 6px;
+  }
+  
+  .topbar-actions button { 
+    padding: 8px; 
+    aspect-ratio: 1;
+    border-radius: 10px;
+  }
+  
+  .btn-text { display: none; }
+  
+  .player-card { padding: 16px; gap: 16px; }
+  .hero-card { padding: 16px; flex-direction: column; align-items: center; text-align: center; }
+  .hero-meta { align-items: center; margin-top: 12px; }
+  
+  .hero-copy { width: 100%; }
+  .hero-copy h1 { 
+    font-size: 20px; 
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .now-playing { padding: 12px; gap: 12px; }
+  #albumArt { width: 60px; height: 60px; }
+  .track-copy h2 { 
+    font-size: 18px; 
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .controls { gap: 12px; }
+  .control { width: 44px; height: 44px; }
+  .control.primary { width: 56px; height: 56px; }
+  
+  .volume { padding: 10px; flex-direction: column; gap: 6px; }
+  
+  .tier-banner { padding: 16px; text-align: center; }
+  .tier-copy { text-align: center; }
+}
+
+/* Landscape / Height constraints */
+@media (max-height: 500px) {
+  .hero-card { display: none; }
+  .tier-banner { display: none; }
+}
+
+.hero-copy h1, .track-copy h2 {
+  max-width: 100%;
+}
+
