@@ -2,7 +2,7 @@
   "name": "spotify-mini-player",
   "displayName": "Spotify Mini Player",
   "description": "A premium Spotify sidebar and mini-player for VS Code with keyboard shortcuts, voice control, and full OAuth login. Supports Premium API playback and Free desktop fallback.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "momanamjad",
   "license": "MIT",
   "icon": "media/icon128.png",
