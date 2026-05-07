@@ -163,6 +163,16 @@ The track art may not be available immediately. Click **Refresh** or wait for th
 
 ---
 
+## Updates
+
+The Spotify Mini Player follows VS Code's standard extension update process:
+
+- **Automatic Updates:** By default, VS Code will check for and download updates automatically in the background.
+- **Reload Required:** When an update is downloaded, you will see a blue badge or a "Reload Required" button in the Extensions sidebar. Click it to activate the latest version immediately.
+- **Manual Update:** If auto-updates are disabled, you can manually check for updates by opening the Extensions view (`Ctrl+Shift+X`), searching for "Spotify Mini Player", and clicking the **Update** button if available.
+
+---
+
 ## Folder Layout
 
 ```
