@@ -657,7 +657,6 @@ class SpotifyPlayerController {
         this.state.playing = media.playing;
         this.state.title = media.title;
         this.state.artist = media.artist;
-        this.state.albumArt = media.albumArt || this.state.albumArt || "";
         this.state.progressMs = Math.max(0, media.progressMs || 0);
         this.state.durationMs = Math.max(0, media.durationMs || 0);
         this.state.progressLabel = formatDuration(this.state.progressMs);
@@ -665,11 +664,27 @@ class SpotifyPlayerController {
         this.state.deviceName = media.deviceName;
         this.state.deviceType = media.deviceType;
         this.state.debugSource = media.source;
+
+        // Prefer Windows thumbnail; fall back to iTunes if unavailable or corrupt
+        let art = isRenderableAlbumArt(media.albumArt) ? media.albumArt : (this.state.albumArt || "");
+        let artSource = art ? "windows-thumbnail" : "none";
+
+        // If no renderable art yet, try iTunes public search (no auth needed)
+        if (!art) {
+          try {
+            art = await this.searchPublicTrackArtwork(media.title, media.artist);
+            if (art) artSource = "public-search";
+          } catch { /* best-effort */ }
+        }
+
+        this.state.albumArt = art;
         this.state.debugSummary = [
           "source=windows-media-session",
           `playing=${media.playing}`,
           `title=${media.title}`,
           `artist=${media.artist}`,
+          `art=${art ? "yes" : "no"}`,
+          `artSource=${artSource}`,
           `device=${media.deviceName || "none"}`,
           `tier=${this.state.accountMode}`
         ].join(" | ");

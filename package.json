@@ -152,7 +152,10 @@
     "lint": "echo \"No lint step configured.\"",
     "test": "echo \"No tests configured.\"",
     "package": "vsce package",
-    "publish": "vsce publish"
+    "publish": "vsce publish",
+    "patch": "vsce publish patch",
+    "minor": "vsce publish minor",
+    "major": "vsce publish major"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

@@ -1,8 +1,9 @@
 :root {
   color-scheme: dark;
+  /* Base solid colors — immune to VS Code theme bleed */
   --bg:            #0d1117;
-  --panel:         #141921;
-  --panel-strong:  #1a2030;
+  --panel:         rgba(20, 25, 33, 0.75);
+  --panel-strong:  rgba(26, 32, 48, 0.88);
   --border:        rgba(255, 255, 255, 0.09);
   --text:          #f0f4f8;
   --muted:         rgba(200, 215, 230, 0.6);
@@ -11,10 +12,12 @@
   --premium-purple:#8b5cf6;
   --premium-pink:  #ec4899;
   --warn:          #fbbf24;
-  --shadow:        0 4px 24px rgba(0, 0, 0, 0.6);
+  --shadow:        0 4px 24px rgba(0, 0, 0, 0.6),
+                   0 1px 0px rgba(255, 255, 255, 0.06) inset;
   --radius:        12px;
-  --glass-border:  1px solid rgba(255, 255, 255, 0.09);
-  --glass-bg:      #141921;
+  --glass-border:  1px solid rgba(255, 255, 255, 0.13);
+  /* 60% opacity — lets the album art glow show through the glass cards */
+  --glass-bg:      rgba(13, 17, 23, 0.60);
 }
 
 * { 
@@ -85,26 +88,33 @@ html, body {
 
 .album-stage-image {
   transform: scale(1.1);
-  filter: blur(40px) brightness(0.4);
+  /* brightness(0.65) — image is vivid, not crushed to black */
+  filter: blur(36px) brightness(0.65) saturate(1.2);
 }
 
 .album-stage-glow {
-  transform: scale(1.2);
-  filter: blur(80px) saturate(1.5);
+  transform: scale(1.25);
+  filter: blur(70px) saturate(2) brightness(0.8);
   opacity: 0;
 }
 
 .album-stage-overlay {
-  background: radial-gradient(circle at center, transparent 0%, rgba(5, 7, 10, 0.8) 100%);
+  /* Lighter vignette — let the image breathe through the center */
+  background: linear-gradient(
+    to bottom,
+    rgba(13, 17, 23, 0.3) 0%,
+    rgba(13, 17, 23, 0.15) 40%,
+    rgba(13, 17, 23, 0.5) 100%
+  );
 }
 
 body.has-album-art .album-stage-image {
-  opacity: 0.6;
+  opacity: 0.88;
   transform: scale(1.05);
 }
 
 body.has-album-art .album-stage-glow {
-  opacity: 0.3;
+  opacity: 0.55;
 }
 
 .chrome {
@@ -130,11 +140,58 @@ body.has-album-art .album-stage-glow {
 .volume,
 .hero-card,
 .tier-banner {
-  /* Solid dark backgrounds — avoid inheriting VS Code's sidebar tint via backdrop-filter */
+  /* Glassmorphism: solid dark base so VS Code's theme can't bleed through,
+     then backdrop-filter blurs our OWN background (album art glow, gradients) */
   background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(1.05);
   border: var(--glass-border);
   box-shadow: var(--shadow);
   border-radius: var(--radius);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Glass shine overlay — simulates the frosted top-edge light refraction */
+.topbar::before,
+.player-card::before,
+.side-panel::before,
+.status-block::before,
+.last-action::before,
+.tips::before,
+.voice-card::before,
+.debug-card::before,
+.now-playing::before,
+.volume::before,
+.tier-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.01) 40%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+/* Ensure card content renders above the glass shine pseudo-element */
+.topbar > *,
+.player-card > *,
+.side-panel > *,
+.status-block > *,
+.last-action > *,
+.tips > *,
+.voice-card > *,
+.debug-card > *,
+.now-playing > *,
+.volume > *,
+.tier-banner > * {
+  position: relative;
+  z-index: 1;
 }
 
 .topbar {
