@@ -207,21 +207,6 @@ The Spotify Mini Player follows VS Code's standard extension update process:
 npm install
 npm run package   # produces spotify-mini-player-x.x.x.vsix
 ```
-
-### Publish to Marketplace
-
-1. Create a publisher account at [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage).
-2. Generate a Personal Access Token with **Marketplace publish** scope.
-3. Run:
-   ```bash
-   npx vsce login momanamjad
-   npm run publish
-   ```
-
-> **Before publishing:** replace `media/icon128.png` with your actual 128×128 PNG icon.
-
----
-
 ## Changelog
 
 ### v0.2.0
