@@ -945,6 +945,12 @@ class SpotifyPlayerController {
       this.session.user = await me.json();
       this.state.userName = this.session.user.display_name || this.session.user.id || "";
       this.state.product = this.session.user.product || "";
+      this.state.error = "";
+      this.updatePlaybackMode();
+    } else {
+      const errorBody = await me.text().catch(() => "Unknown error");
+      this.state.error = `Profile fetch failed (${me.status}): ${errorBody}`;
+      this.state.product = "";
       this.updatePlaybackMode();
     }
   }
@@ -1748,10 +1754,10 @@ class SpotifyPlayerController {
         ? "Premium account"
         : this.state.product === "free"
           ? "Free account"
-          : "Spotify account";
+          : (this.state.authenticated && !this.session.user ? "Checking status..." : "Spotify account");
       const authLabel = this.session.user?.display_name
         ? `Connected as ${this.session.user.display_name} - ${productLabel}`
-        : `Connected to Spotify - ${productLabel}`;
+        : (this.state.authenticated && !this.session.user ? `Connected - ${productLabel}` : `Connected to Spotify - ${productLabel}`);
       this.state.authenticated = true;
       this.state.authStatus = authLabel;
       this.state.authInProgress = false;
