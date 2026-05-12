@@ -80,6 +80,12 @@
   let progressAnchorAt = 0;
   let isSeeking = false;
   let seekPreviewMs = 0;
+  
+  // Audio Visualizer State
+  let audioCtx = null;
+  let analyser = null;
+  let micStream = null;
+  let visualizerId = null;
 
   function post(type, payload = {}) {
     vscode.postMessage({ type, ...payload });
@@ -184,13 +190,17 @@
       els.tierBanner.classList.add("premium");
       els.tierTitle.textContent = "Premium API mode";
       els.tierCopy.textContent = state.tierMessage || "Direct Spotify controls are enabled.";
+      document.documentElement.style.setProperty('--accent', '#8b5cf6');
+      document.documentElement.style.setProperty('--accent-glow', 'rgba(139, 92, 246, 0.5)');
     } else {
       els.tierBanner.classList.add("basic");
       els.tierTitle.textContent = state.authenticated ? "Free desktop mode" : "Desktop mode ready";
       els.tierCopy.textContent = state.tierMessage || "Controls use system media keys, so Spotify Free works.";
+      document.documentElement.style.setProperty('--accent', '#1DB954');
+      document.documentElement.style.setProperty('--accent-glow', 'rgba(29, 185, 84, 0.4)');
     }
     els.voiceText.textContent = state.voiceActive ? "Listening for commands" : 'Say "Play music" or "Next song"';
-    els.voiceStatus.textContent = state.voiceActive ? "Listening for commands." : "Idle";
+    els.voiceStatus.textContent = state.voiceActive ? "Listening..." : "Idle";
     els.voiceDot.classList.toggle("live", state.voiceActive);
     document.body.classList.toggle("mode-mini", state.mode === "mini");
 
@@ -224,11 +234,72 @@
     if (connectBtnText) connectBtnText.textContent = state.authInProgress ? "Connecting..." : (state.authenticated ? "Reconnect" : "Connect");
     els.connectButton.disabled = state.authInProgress;
     els.logoutButton.disabled = !state.authenticated || state.authInProgress;
-    els.previousButton.disabled = false;
-    els.nextButton.disabled = false;
-    els.playPauseButton.disabled = false;
-    els.volume.disabled = false;
+    
+    els.debugSummary.textContent = "All components initialized. System OK.";
+    
+    if (state.albumArt !== lastProcessedArt) {
+      lastProcessedArt = state.albumArt;
+      updateChameleonTheme(state.albumArt);
+    }
+    
     syncProgressTicker();
+  }
+
+  let lastProcessedArt = "";
+  async function updateChameleonTheme(artUrl) {
+    if (!artUrl || artUrl.includes('placeholder')) {
+      resetThemeToDefault();
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = artUrl;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 50; canvas.height = 50; // Low-res for speed
+      ctx.drawImage(img, 0, 0, 50, 50);
+      
+      const data = ctx.getImageData(0, 0, 50, 50).data;
+      let r = 0, g = 0, b = 0, count = 0;
+      
+      // Sample vibrant pixels
+      for (let i = 0; i < data.length; i += 16) {
+        const pr = data[i], pg = data[i+1], pb = data[i+2];
+        const brightness = (pr * 299 + pg * 587 + pb * 114) / 1000;
+        if (brightness > 40 && brightness < 220) { // Avoid pure black/white
+          r += pr; g += pg; b += pb; count++;
+        }
+      }
+      
+      if (count > 0) {
+        r = Math.floor(r / count); g = Math.floor(g / count); b = Math.floor(b / count);
+        // Boost saturation for neon effect
+        const max = Math.max(r, g, b);
+        const factor = 200 / max; 
+        if (factor > 1) {
+          r = Math.min(255, r * factor);
+          g = Math.min(255, g * factor);
+          b = Math.min(255, b * factor);
+        }
+        
+        const color = `rgb(${r}, ${g}, ${b})`;
+        const glow = `rgba(${r}, ${g}, ${b}, 0.5)`;
+        document.documentElement.style.setProperty('--accent', color);
+        document.documentElement.style.setProperty('--accent-glow', glow);
+        document.documentElement.style.setProperty('--ambient-color', color);
+      }
+    };
+  }
+
+  function resetThemeToDefault() {
+    const isPremium = state.authenticated && state.canControlPlayback;
+    const color = isPremium ? '#8b5cf6' : '#1DB954';
+    const glow = isPremium ? 'rgba(139, 92, 246, 0.5)' : 'rgba(29, 185, 84, 0.4)';
+    document.documentElement.style.setProperty('--accent', color);
+    document.documentElement.style.setProperty('--accent-glow', glow);
+    document.documentElement.style.setProperty('--ambient-color', 'transparent');
   }
 
   function normalizeSpeech(text) {
@@ -271,6 +342,77 @@
     return null;
   }
 
+  async function startVisualizer() {
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      const source = audioCtx.createMediaStreamSource(micStream);
+      source.connect(analyser);
+      analyser.fftSize = 64;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      const bars = document.querySelectorAll('.voice-bar');
+
+      function draw() {
+        if (!state.voiceActive) return;
+        visualizerId = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(dataArray);
+        
+        let hasSound = false;
+        for (let i = 0; i < bars.length; i++) {
+          const index = Math.floor(i * (bufferLength / bars.length));
+          const value = dataArray[index] || 0;
+          if (value > 10) hasSound = true;
+          
+          // Boost sensitivity and use power for dramatic peaks
+          const normalized = value / 255;
+          const boosted = Math.pow(normalized, 0.8) * 40; 
+          
+          bars[i].style.height = `${Math.max(4, boosted)}px`;
+          bars[i].classList.add('active');
+          
+          // Dynamic color based on intensity
+          if (value > 150) {
+            bars[i].style.background = '#fff';
+            bars[i].style.boxShadow = `0 0 15px #fff`;
+          } else {
+            bars[i].style.background = '';
+            bars[i].style.boxShadow = '';
+          }
+        }
+        
+        if (!hasSound) {
+          // If silent, let them breathe slightly
+          bars.forEach((b, i) => {
+            const breathing = 4 + Math.sin(Date.now() / 200 + i) * 2;
+            b.style.height = `${breathing}px`;
+          });
+        }
+      }
+      draw();
+    } catch (err) {
+      console.error("Microphone access for visualizer denied:", err);
+    }
+  }
+
+  function stopVisualizer() {
+    if (visualizerId) cancelAnimationFrame(visualizerId);
+    if (audioCtx) {
+      try { audioCtx.close(); } catch(e) {}
+      audioCtx = null;
+    }
+    if (micStream) {
+      micStream.getTracks().forEach(t => t.stop());
+      micStream = null;
+    }
+    document.querySelectorAll('.voice-bar').forEach(b => {
+      b.style.height = '4px';
+      b.classList.remove('active');
+    });
+  }
+
   function setVoiceListening(listening) {
     voiceShouldListen = listening;
     state.voiceActive = listening;
@@ -283,6 +425,7 @@
     }
 
     if (listening) {
+      startVisualizer();
       if (!recognition) {
         recognition = new SpeechRecognition();
         recognition.lang = "en-US";
@@ -337,6 +480,7 @@
     if (recognition) {
       try {
         recognition.stop();
+        stopVisualizer();
       } catch (error) {
         // Ignore stop races.
       }
