@@ -16,12 +16,16 @@
     <div class="album-stage-glow" id="albumStageGlow"></div>
     <div class="album-stage-overlay"></div>
   </div>
+  <div class="particles" id="particles" aria-hidden="true"></div>
   <div class="chrome">
-    <header class="topbar">
+    <header class="topbar tilt-card">
       <div class="brand">
         <span class="brand-mark"></span>
         <div>
-          <div class="eyebrow">Hybrid music control</div>
+          <div class="eyebrow-container">
+            <div class="eyebrow">Hybrid music control</div>
+            <span class="premium-badge">Premium</span>
+          </div>
           <div class="title">Spotify inside VS Code</div>
         </div>
       </div>
@@ -51,7 +55,7 @@
 
     <main class="layout">
       <section class="player-card">
-        <div class="hero-card">
+        <div class="hero-card tilt-card">
           <div class="hero-copy">
             <p class="label" id="controlMode">Desktop mode</p>
             <h1 id="trackTitle">Connect to Spotify</h1>
@@ -79,7 +83,7 @@
           </p>
         </div>
 
-        <div class="now-playing">
+        <div class="now-playing tilt-card">
           <img id="albumArt" alt="Album art" />
           <div class="track-copy">
             <p class="label">Now playing</p>
@@ -127,7 +131,7 @@
       </section>
 
       <aside class="side-panel">
-        <div class="status-block">
+        <div class="status-block tilt-card">
           <div class="status-dot" id="connectionDot"></div>
           <div>
             <p class="label">Connection</p>
@@ -135,7 +139,7 @@
           </div>
         </div>
 
-        <div class="status-block">
+        <div class="status-block tilt-card">
           <div class="status-dot live" id="voiceDot"></div>
           <div>
             <p class="label">Voice</p>

@@ -36,7 +36,8 @@
     volume: document.getElementById("volume"),
     volumeValue: document.getElementById("volumeValue"),
     connectButton: document.getElementById("connectButton"),
-    logoutButton: document.getElementById("logoutButton")
+    logoutButton: document.getElementById("logoutButton"),
+    particles: document.getElementById("particles")
   };
 
   const state = {
@@ -442,6 +443,104 @@
     applyBackdrop("");
   });
 
+  function initTilt() {
+    const cards = document.querySelectorAll(".tilt-card");
+    document.addEventListener("mousemove", (e) => {
+      const { clientX, clientY } = e;
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      
+      cards.forEach(card => {
+        const rect = card.getBoundingClientRect();
+        const cardCenterX = rect.left + rect.width / 2;
+        const cardCenterY = rect.top + rect.height / 2;
+
+        // Update mouse position variables for CSS spotlight effect
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        card.style.setProperty("--mouse-x", `${x}px`);
+        card.style.setProperty("--mouse-y", `${y}px`);
+        
+        // Tilt based on mouse proximity to card center
+        const tiltX = (clientY - cardCenterY) / 35;
+        const tiltY = (cardCenterX - clientX) / 35;
+        
+        card.style.transform = `rotateX(${tiltX}deg) rotateY(${tiltY}deg) translateZ(10px)`;
+      });
+    });
+
+    document.addEventListener("mouseleave", () => {
+      cards.forEach(card => {
+        card.style.transform = "rotateX(0deg) rotateY(0deg) translateZ(0px)";
+      });
+    });
+  }
+
+  let particlesRunning = false;
+  function initParticles() {
+    if (particlesRunning || !els.particles) return;
+    particlesRunning = true;
+
+    const count = 25;
+    for (let i = 0; i < count; i++) {
+      createParticle();
+    }
+  }
+
+  function createParticle() {
+    const p = document.createElement("div");
+    p.className = "particle";
+    
+    const size = Math.random() * 4 + 2;
+    p.style.width = `${size}px`;
+    p.style.height = `${size}px`;
+    
+    resetParticle(p);
+    els.particles.appendChild(p);
+    animateParticle(p);
+  }
+
+  function resetParticle(p) {
+    p.style.left = `${Math.random() * 100}%`;
+    p.style.top = `${Math.random() * 100}%`;
+    p.style.opacity = Math.random() * 0.4;
+    p.style.transform = `scale(${Math.random() * 0.5 + 0.5})`;
+  }
+
+  function animateParticle(p) {
+    const duration = Math.random() * 15000 + 10000;
+    const xDist = (Math.random() - 0.5) * 200;
+    const yDist = (Math.random() - 0.5) * 200;
+
+    p.animate([
+      { transform: `translate(0, 0) scale(1)`, opacity: p.style.opacity },
+      { transform: `translate(${xDist}px, ${yDist}px) scale(1.5)`, opacity: 0.6 },
+      { transform: `translate(${xDist * 2}px, ${yDist * 2}px) scale(1)`, opacity: 0 }
+    ], {
+      duration,
+      iterations: Infinity,
+      direction: "alternate",
+      easing: "ease-in-out"
+    });
+  }
+
   wireControls();
+  initTilt();
+  
+  // Only start particles if already in premium mode, 
+  // otherwise they'll be started by syncUi when status changes
+  if (state.canControlPlayback) {
+    initParticles();
+  }
+
+  // Update syncUi to trigger particles
+  const originalSyncUi = syncUi;
+  syncUi = function() {
+    originalSyncUi();
+    if (state.canControlPlayback) {
+      initParticles();
+    }
+  };
+
   syncUi();
 })();
