@@ -144,6 +144,28 @@ body.premium-mode .particles {
   pointer-events: none;
 }
 
+/* PREMIUM SLEEK SCROLLBAR */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
 .chrome {
   position: relative;
   z-index: 1;
@@ -826,9 +848,41 @@ body.premium-mode .hero-card {
   .volume-step { width: 28px; height: 28px; }
   #volumeValue { min-width: 30px; font-size: 11px; }
 
-  .side-panel { padding: 12px; gap: 10px; }
-  .status-block { padding: 10px; gap: 10px; }
-  .status-dot { width: 8px; height: 8px; }
+  .side-panel { 
+    display: flex; 
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    margin-top: 20px;
+  }
+  
+  .status-block {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    transition: box-shadow 0.3s ease;
+  }
+
+  .premium-mode .status-block {
+    border-color: rgba(139, 92, 246, 0.2);
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.1);
+  }
+
+  .status-block .label {
+    font-size: 9px;
+    margin-bottom: 2px;
+  }
+
+  .status-block p:not(.label) {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
   .tips ul { 
     display: flex; 
     flex-wrap: wrap; 
@@ -836,11 +890,14 @@ body.premium-mode .hero-card {
     padding: 0; 
     list-style: none; 
     font-size: 11px;
+    margin-top: 8px;
   }
+  
   .tips li { 
-    background: rgba(255,255,255,0.05); 
-    padding: 2px 6px; 
-    border-radius: 4px; 
+    background: rgba(255, 255, 255, 0.05); 
+    padding: 4px 8px; 
+    border-radius: 6px; 
+    border: 1px solid rgba(255, 255, 255, 0.03);
   }
 }
 
@@ -848,7 +905,7 @@ body.premium-mode .hero-card {
 
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 1fr; }
-  .side-panel { display: none; }
+  .side-panel { display: flex; flex-direction: column; }
 }
 
 @media (max-width: 600px) {
