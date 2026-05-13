@@ -145,8 +145,8 @@
   function applyBackdrop(imageUrl) {
     if (!isRenderableImage(imageUrl)) {
       activeBackdrop = "";
-      els.albumStageImage.style.backgroundImage = "none";
-      els.albumStageGlow.style.backgroundImage = "none";
+      if (els.albumStageImage) els.albumStageImage.style.backgroundImage = "none";
+      if (els.albumStageGlow) els.albumStageGlow.style.backgroundImage = "none";
       document.body.classList.remove("has-album-art");
       return;
     }
@@ -157,95 +157,126 @@
     }
 
     activeBackdrop = imageUrl;
-    const safeUrl = imageUrl.replace(/(["\\])/g, "\\$1");
-    els.albumStageImage.style.backgroundImage = `url("${safeUrl}")`;
-    els.albumStageGlow.style.backgroundImage = `url("${safeUrl}")`;
+    // Properly escape and validate URL for CSS
+    let safeUrl = "";
+    try {
+      const url = new URL(imageUrl);
+      safeUrl = url.toString();
+    } catch {
+      // If URL parsing fails, escape manually but safely
+      safeUrl = imageUrl.replace(/[\\'"]/g, "").trim();
+    }
+    if (els.albumStageImage) els.albumStageImage.style.backgroundImage = `url("${safeUrl}")`;
+    if (els.albumStageGlow) els.albumStageGlow.style.backgroundImage = `url("${safeUrl}")`;
     document.body.classList.add("has-album-art");
   }
 
+  let lastRenderedState = {};
+
   function syncUi() {
+    // Optimization: Check for deep changes in a few key fields to avoid redundant work
+    const stateKey = `${state.playing}-${state.title}-${state.artist}-${state.canControlPlayback}-${state.authenticated}-${state.mode}`;
+    
     const controlMode = state.canControlPlayback
       ? "Premium API mode"
       : (state.authenticated ? "Free desktop mode" : "Desktop mode");
 
-    document.body.classList.toggle("is-playing", Boolean(state.playing));
-    document.body.classList.toggle("premium-mode", Boolean(state.canControlPlayback));
-    els.trackTitle.textContent = state.title || "No song playing";
-    els.trackTitleMirror.textContent = state.title || "No song playing";
-    els.trackArtist.textContent = state.artist || "Spotify";
-    els.trackArtistMirror.textContent = state.artist || "Spotify";
-    els.volume.value = String(state.deviceVolume ?? state.volume ?? 70);
-    els.volumeValue.textContent = `${state.deviceVolume ?? state.volume ?? 70}%`;
-    els.lastAction.textContent = state.lastAction || "Ready";
-    els.connectionText.textContent = state.authenticated ? (state.authStatus || "Connected to Spotify") : "Basic controls ready";
-    els.controlMode.textContent = controlMode;
-    els.connectionDot.style.background = state.authenticated ? "var(--accent)" : "#667a90";
-    els.deviceName.textContent = state.deviceName || "No active device";
-    els.deviceType.textContent = state.deviceType || "Waiting for Spotify";
-    els.errorText.textContent = state.error || "";
-    els.debugSource.textContent = state.debugSource || "none";
-    els.debugSummary.textContent = state.debugSummary || "No Spotify response yet.";
-    els.tierBanner.classList.remove("hidden", "basic", "premium");
-    if (state.authenticated && state.canControlPlayback) {
-      els.tierBanner.classList.add("premium");
-      els.tierTitle.textContent = "Premium API mode";
-      els.tierCopy.textContent = state.tierMessage || "Direct Spotify controls are enabled.";
-      document.documentElement.style.setProperty('--accent', '#8b5cf6');
-      document.documentElement.style.setProperty('--accent-glow', 'rgba(139, 92, 246, 0.5)');
-    } else {
-      els.tierBanner.classList.add("basic");
-      els.tierTitle.textContent = state.authenticated ? "Free desktop mode" : "Desktop mode ready";
-      els.tierCopy.textContent = state.tierMessage || "Controls use system media keys, so Spotify Free works.";
-      document.documentElement.style.setProperty('--accent', '#1DB954');
-      document.documentElement.style.setProperty('--accent-glow', 'rgba(29, 185, 84, 0.4)');
-    }
-    els.voiceText.textContent = state.voiceActive ? "Listening for commands" : 'Say "Play music" or "Next song"';
-    els.voiceStatus.textContent = state.voiceActive ? "Listening..." : "Idle";
-    els.voiceDot.classList.toggle("live", state.voiceActive);
-    document.body.classList.toggle("mode-mini", state.mode === "mini");
-
-    if (isRenderableImage(state.albumArt)) {
-      els.albumArt.src = state.albumArt;
-      els.albumArt.style.opacity = "1";
-      applyBackdrop(state.albumArt);
-    } else {
-      els.albumArt.removeAttribute("src");
-      els.albumArt.style.opacity = "0.7";
-      applyBackdrop("");
-    }
-
-    const voiceBtnText = els.voiceButton.querySelector(".btn-text");
-    if (voiceBtnText) voiceBtnText.textContent = state.voiceActive ? "Stop voice control" : "Start voice control";
-    
-    const voiceToggleText = els.voiceToggle.querySelector(".btn-text");
-    if (voiceToggleText) voiceToggleText.textContent = state.voiceActive ? "Voice On" : "Voice";
-    
-    // Toggle play/pause icon
-    const playPauseIcon = els.playPauseButton.querySelector("svg");
-    if (playPauseIcon) {
-      if (state.playing) {
-        playPauseIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
-      } else {
-        playPauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+    if (lastRenderedState.playing !== state.playing) {
+      document.body.classList.toggle("is-playing", Boolean(state.playing));
+      const playPauseIcon = els.playPauseButton?.querySelector("svg");
+      if (playPauseIcon) {
+        playPauseIcon.innerHTML = state.playing 
+          ? '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>' 
+          : '<path d="M8 5v14l11-7z"/>';
       }
     }
 
-    const connectBtnText = els.connectButton.querySelector(".btn-text");
-    if (connectBtnText) connectBtnText.textContent = state.authInProgress ? "Connecting..." : (state.authenticated ? "Reconnect" : "Connect");
-    els.connectButton.disabled = state.authInProgress;
-    els.logoutButton.disabled = !state.authenticated || state.authInProgress;
+    if (lastRenderedState.canControlPlayback !== state.canControlPlayback) {
+      document.body.classList.toggle("premium-mode", Boolean(state.canControlPlayback));
+    }
+
+    if (lastRenderedState.title !== state.title) {
+      if (els.trackTitle) els.trackTitle.textContent = state.title || "No song playing";
+      if (els.trackTitleMirror) els.trackTitleMirror.textContent = state.title || "No song playing";
+    }
+
+    if (lastRenderedState.artist !== state.artist) {
+      if (els.trackArtist) els.trackArtist.textContent = state.artist || "Spotify";
+      if (els.trackArtistMirror) els.trackArtistMirror.textContent = state.artist || "Spotify";
+    }
+
+    const currentVolume = state.deviceVolume ?? state.volume ?? 70;
+    if (lastRenderedState.volume !== currentVolume) {
+      if (els.volume) els.volume.value = String(currentVolume);
+      if (els.volumeValue) els.volumeValue.textContent = `${currentVolume}%`;
+    }
+
+    if (els.lastAction && lastRenderedState.lastAction !== state.lastAction) {
+      els.lastAction.textContent = state.lastAction || "Ready";
+    }
+
+    if (els.controlMode && lastRenderedState.controlMode !== controlMode) {
+      els.controlMode.textContent = controlMode;
+    }
+
+    if (lastRenderedState.albumArt !== state.albumArt) {
+      if (els.albumArt) {
+        if (isRenderableImage(state.albumArt)) {
+          els.albumArt.src = state.albumArt;
+          els.albumArt.style.opacity = "1";
+          applyBackdrop(state.albumArt);
+        } else {
+          els.albumArt.removeAttribute("src");
+          els.albumArt.style.opacity = "0.7";
+          applyBackdrop("");
+        }
+      }
+      
+      // Throttle Chameleon Engine to avoid blocking the UI on rapid track changes
+      if (state.albumArt && state.albumArt !== lastProcessedArt) {
+        lastProcessedArt = state.albumArt;
+        // Defer theme update and batch with requestIdleCallback for better performance
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(() => updateChameleonTheme(state.albumArt), { timeout: 2000 });
+        } else {
+          setTimeout(() => updateChameleonTheme(state.albumArt), 200);
+        }
+      }
+    }
+
+    document.body.classList.toggle("mode-mini", state.mode === "mini");
+    document.body.classList.toggle("authenticated", Boolean(state.authenticated));
+
+    if (els.connectButton) {
+      els.connectButton.style.display = state.authenticated ? "none" : "flex";
+    }
+    if (els.logoutButton) {
+      els.logoutButton.style.display = state.authenticated ? "flex" : "none";
+    }
+
+    // Update hero message for unauthenticated users
+    if (!state.authenticated) {
+      if (els.trackTitle) els.trackTitle.textContent = "Connect to Spotify";
+      if (els.trackArtist) els.trackArtist.textContent = "Authorize the extension to control playback.";
+    } else if (!state.title || state.title === "Connect to Spotify") {
+      // Authenticated but no track playing
+      if (els.trackTitle) els.trackTitle.textContent = state.userName ? `Welcome, ${state.userName}` : "Connected to Spotify";
+      if (els.trackArtist) els.trackArtist.textContent = "Open Spotify and play a song to start.";
+    }
     
-    els.debugSummary.textContent = "All components initialized. System OK.";
+    // Update local cache
+    lastRenderedState = { ...state, volume: currentVolume, controlMode };
     
-    if (state.albumArt !== lastProcessedArt) {
-      lastProcessedArt = state.albumArt;
-      updateChameleonTheme(state.albumArt);
+    // Trigger particles if in premium mode
+    if (state.canControlPlayback) {
+      initParticles();
     }
     
     syncProgressTicker();
   }
 
   let lastProcessedArt = "";
+  let chameleonThrottleTimer = null;
   async function updateChameleonTheme(artUrl) {
     if (!artUrl || artUrl.includes('placeholder')) {
       resetThemeToDefault();
@@ -253,53 +284,79 @@
     }
 
     const img = new Image();
+    // Use Anonymous crossOrigin to allow getImageData, but handle failures
     img.crossOrigin = "Anonymous";
-    img.src = artUrl;
     img.onload = () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      canvas.width = 50; canvas.height = 50; // Low-res for speed
-      ctx.drawImage(img, 0, 0, 50, 50);
-      
-      const data = ctx.getImageData(0, 0, 50, 50).data;
-      let r = 0, g = 0, b = 0, count = 0;
-      
-      // Sample vibrant pixels
-      for (let i = 0; i < data.length; i += 16) {
-        const pr = data[i], pg = data[i+1], pb = data[i+2];
-        const brightness = (pr * 299 + pg * 587 + pb * 114) / 1000;
-        if (brightness > 40 && brightness < 220) { // Avoid pure black/white
-          r += pr; g += pg; b += pb; count++;
-        }
+      if (!ctx) {
+        console.warn("Canvas context unavailable for Chameleon theme");
+        resetThemeToDefault();
+        return;
       }
+      canvas.width = 50; canvas.height = 50;
       
-      if (count > 0) {
-        r = Math.floor(r / count); g = Math.floor(g / count); b = Math.floor(b / count);
-        // Boost saturation for neon effect
-        const max = Math.max(r, g, b);
-        const factor = 200 / max; 
-        if (factor > 1) {
-          r = Math.min(255, r * factor);
-          g = Math.min(255, g * factor);
-          b = Math.min(255, b * factor);
+      try {
+        ctx.drawImage(img, 0, 0, 50, 50);
+        const data = ctx.getImageData(0, 0, 50, 50).data;
+        let r = 0, g = 0, b = 0, count = 0;
+        
+        // Sample vibrant pixels
+        for (let i = 0; i < data.length; i += 16) {
+          const pr = data[i], pg = data[i+1], pb = data[i+2];
+          const brightness = (pr * 299 + pg * 587 + pb * 114) / 1000;
+          if (brightness > 40 && brightness < 220) { // Avoid pure black/white
+            r += pr; g += pg; b += pb; count++;
+          }
         }
         
-        const color = `rgb(${r}, ${g}, ${b})`;
-        const glow = `rgba(${r}, ${g}, ${b}, 0.5)`;
-        document.documentElement.style.setProperty('--accent', color);
-        document.documentElement.style.setProperty('--accent-glow', glow);
-        document.documentElement.style.setProperty('--ambient-color', color);
+        if (count > 0) {
+          r = Math.floor(r / count); g = Math.floor(g / count); b = Math.floor(b / count);
+          // Boost saturation for neon effect
+          const max = Math.max(r, g, b);
+          const factor = 200 / max; 
+          if (factor > 1) {
+            r = Math.min(255, r * factor);
+            g = Math.min(255, g * factor);
+            b = Math.min(255, b * factor);
+          }
+          
+          const color = `rgb(${r}, ${g}, ${b})`;
+          const glow = `rgba(${r}, ${g}, ${b}, 0.5)`;
+          try {
+            document.documentElement.style.setProperty('--accent', color);
+            document.documentElement.style.setProperty('--accent-glow', glow);
+            document.documentElement.style.setProperty('--ambient-color', color);
+          } catch (e) {
+            console.warn("Failed to set CSS variables for theme:", e);
+            resetThemeToDefault();
+          }
+        } else {
+          resetThemeToDefault();
+        }
+      } catch (e) {
+        console.warn("Chameleon extraction failed (likely CORS):", e);
+        resetThemeToDefault();
       }
     };
+    img.onerror = () => {
+      console.warn("Failed to load album art for Chameleon theme:", artUrl);
+      resetThemeToDefault();
+    };
+    img.src = artUrl;
   }
 
   function resetThemeToDefault() {
-    const isPremium = state.authenticated && state.canControlPlayback;
-    const color = isPremium ? '#8b5cf6' : '#1DB954';
-    const glow = isPremium ? 'rgba(139, 92, 246, 0.5)' : 'rgba(29, 185, 84, 0.4)';
-    document.documentElement.style.setProperty('--accent', color);
-    document.documentElement.style.setProperty('--accent-glow', glow);
-    document.documentElement.style.setProperty('--ambient-color', 'transparent');
+    try {
+      const isPremium = state.authenticated && state.canControlPlayback;
+      const color = isPremium ? '#8b5cf6' : '#1DB954';
+      const glow = isPremium ? 'rgba(139, 92, 246, 0.5)' : 'rgba(29, 185, 84, 0.4)';
+      document.documentElement.style.setProperty('--accent', color);
+      document.documentElement.style.setProperty('--accent-glow', glow);
+      document.documentElement.style.setProperty('--ambient-color', 'transparent');
+    } catch (e) {
+      console.error("Theme reset error:", e);
+    }
   }
 
   function normalizeSpeech(text) {
@@ -343,7 +400,10 @@
   }
 
   async function startVisualizer() {
-    if (!navigator.mediaDevices?.getUserMedia) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      els.voiceStatus.textContent = "Microphone access not available on this device.";
+      return;
+    }
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -354,10 +414,20 @@
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
       const bars = document.querySelectorAll('.voice-bar');
+      
+      if (bars.length === 0) {
+        console.warn("Voice bar elements not found in DOM");
+        if (audioCtx) audioCtx.close();
+        audioCtx = null;
+        if (micStream) micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+        return;
+      }
 
       function draw() {
         if (!state.voiceActive) return;
         visualizerId = requestAnimationFrame(draw);
+        if (!analyser) return;
         analyser.getByteFrequencyData(dataArray);
         
         let hasSound = false;
@@ -394,19 +464,37 @@
       draw();
     } catch (err) {
       console.error("Microphone access for visualizer denied:", err);
+      els.voiceStatus.textContent = `Microphone access denied: ${err.name}. Please enable microphone permissions in your browser settings.`;
+      state.voiceActive = false;
+      syncUi();
+      post("voice-state", { active: false });
     }
   }
 
   function stopVisualizer() {
     if (visualizerId) cancelAnimationFrame(visualizerId);
+    visualizerId = null;
+    
     if (audioCtx) {
-      try { audioCtx.close(); } catch(e) {}
+      try {
+        // Properly suspend context before closing to avoid hanging
+        if (audioCtx.state === 'running') {
+          audioCtx.suspend();
+        }
+        audioCtx.close();
+      } catch(e) {
+        console.warn("Error closing AudioContext:", e);
+      }
       audioCtx = null;
     }
     if (micStream) {
-      micStream.getTracks().forEach(t => t.stop());
+      micStream.getTracks().forEach(t => {
+        try { t.stop(); } catch(e) {}
+      });
       micStream = null;
     }
+    analyser = null;
+    
     document.querySelectorAll('.voice-bar').forEach(b => {
       b.style.height = '4px';
       b.classList.remove('active');
@@ -420,6 +508,7 @@
 
     if (!SpeechRecognition) {
       els.voiceStatus.textContent = "Web Speech API is not available in this webview.";
+      // Broadcast to all instances (extension.js will sync)
       post("voice-state", { active: false });
       return;
     }
@@ -467,6 +556,7 @@
       try {
         recognition.start();
         els.voiceStatus.textContent = "Listening...";
+        // Sync voice state to extension for other webviews (sidebar/mini-player)
         post("voice-state", { active: true });
       } catch (error) {
         els.voiceStatus.textContent = "Voice control could not start.";
@@ -482,84 +572,92 @@
         recognition.stop();
         stopVisualizer();
       } catch (error) {
-        // Ignore stop races.
+        // Ignore stop races and clean up state
       }
     }
 
+    // Always notify extension of state change for sync across webviews
     post("voice-state", { active: false });
   }
 
   function wireControls() {
-    document.querySelectorAll("[data-action]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const action = button.getAttribute("data-action");
-        if (action === "toggle-voice") {
-          setVoiceListening(!state.voiceActive);
-          return;
-        }
-        if (action === "play-pause") {
-          state.playing = !state.playing;
-        }
-        state.lastAction = `Sending ${button.textContent.trim() || action}...`;
-        syncUi();
-        post("control", { action });
-      });
-    });
+    // Use Event Delegation for maximum reliability
+    document.addEventListener('click', (e) => {
+      const button = e.target.closest('[data-action]');
+      if (!button) return;
 
-    els.volume.addEventListener("input", (event) => {
-      const value = Number(event.target.value);
-      state.deviceVolume = value;
-      els.volumeValue.textContent = `${value}%`;
-      state.lastAction = `Volume preview ${value}%`;
-      syncUi();
-      if (volumeCommitTimer) {
-        clearTimeout(volumeCommitTimer);
+      const action = button.getAttribute("data-action");
+      if (!action) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      console.log(`[UI] Executing Action: ${action}`);
+      
+      if (action === "toggle-voice") {
+        setVoiceListening(!state.voiceActive);
+      } else if (action === "play-pause") {
+        state.playing = !state.playing;
       }
-      volumeCommitTimer = setTimeout(() => {
+      
+      state.lastAction = `Sent: ${action}`;
+      syncUi();
+      post("control", { action });
+    }, true); // Use capture phase to beat any animation overlays
+
+    if (els.volume) {
+      els.volume.oninput = (e) => {
+        const value = Number(e.target.value);
+        state.deviceVolume = value;
+        if (els.volumeValue) els.volumeValue.textContent = `${value}%`;
+        state.lastAction = `Volume preview: ${value}%`;
+        syncUi();
+        
+        if (volumeCommitTimer) clearTimeout(volumeCommitTimer);
+        volumeCommitTimer = setTimeout(() => {
+          console.log(`[UI] Volume Commit (debounced): ${value}`);
+          post("player-state", {
+            state: { volume: value, lastAction: `Volume set to ${value}%` }
+          });
+          volumeCommitTimer = null;
+        }, 350);
+      };
+      els.volume.onchange = (e) => {
+        const value = Number(e.target.value);
+        if (volumeCommitTimer) clearTimeout(volumeCommitTimer);
+        console.log(`[UI] Volume Commit (manual): ${value}`);
         post("player-state", {
           state: { volume: value, lastAction: `Volume set to ${value}%` }
         });
         volumeCommitTimer = null;
-      }, 140);
-    });
+      };
+    }
 
-    els.volume.addEventListener("change", (event) => {
-      const value = Number(event.target.value);
-      if (volumeCommitTimer) {
-        clearTimeout(volumeCommitTimer);
-        volumeCommitTimer = null;
-      }
-      post("player-state", {
-        state: { volume: value, lastAction: `Volume set to ${value}%` }
-      });
-    });
+    if (els.connectButton) {
+      els.connectButton.onclick = () => {
+        console.log("[UI] Manual Connect Call");
+        post("control", { action: "connect" });
+      };
+    }
 
-    els.progressSeek.addEventListener("input", (event) => {
-      const rawValue = Number(event.target.value);
-      const duration = Math.max(0, Number(state.durationMs) || 0);
-      isSeeking = true;
-      seekPreviewMs = duration > 0 ? Math.round((rawValue / 1000) * duration) : 0;
-      renderProgress();
-    });
+    if (els.progressSeek) {
+      els.progressSeek.oninput = (e) => {
+        isSeeking = true;
+        const percent = Number(e.target.value) / 1000;
+        seekPreviewMs = Math.round(percent * (state.durationMs || 0));
+        renderProgress();
+      };
 
-    els.progressSeek.addEventListener("change", (event) => {
-      const rawValue = Number(event.target.value);
-      const duration = Math.max(0, Number(state.durationMs) || 0);
-      const seekMs = duration > 0 ? Math.round((rawValue / 1000) * duration) : 0;
-      isSeeking = false;
-      state.progressMs = seekMs;
-      state.progressLabel = formatTime(seekMs);
-      progressAnchorMs = seekMs;
-      progressAnchorAt = Date.now();
-      renderProgress();
-      post("player-state", {
-        state: { seekMs, lastAction: `Seeking to ${formatTime(seekMs)}` }
-      });
-    });
-
-    els.voiceButton.addEventListener("click", () => {
-      setVoiceListening(!state.voiceActive);
-    });
+      els.progressSeek.onchange = (e) => {
+        isSeeking = false;
+        const percent = Number(e.target.value) / 1000;
+        const positionMs = Math.round(percent * (state.durationMs || 0));
+        console.log(`[UI] Seek Commit: ${positionMs}ms`);
+        post("player-state", { state: { seekMs: positionMs } });
+        state.progressMs = positionMs;
+        syncProgressTicker();
+      };
+    }
 
     post("ready");
   }
@@ -627,7 +725,11 @@
 
     const count = 25;
     for (let i = 0; i < count; i++) {
-      createParticle();
+      try {
+        createParticle();
+      } catch (e) {
+        console.warn("Failed to create particle:", e);
+      }
     }
   }
 
@@ -640,7 +742,7 @@
     p.style.height = `${size}px`;
     
     resetParticle(p);
-    els.particles.appendChild(p);
+    if (els.particles) els.particles.appendChild(p);
     animateParticle(p);
   }
 
@@ -656,35 +758,29 @@
     const xDist = (Math.random() - 0.5) * 200;
     const yDist = (Math.random() - 0.5) * 200;
 
-    p.animate([
-      { transform: `translate(0, 0) scale(1)`, opacity: p.style.opacity },
-      { transform: `translate(${xDist}px, ${yDist}px) scale(1.5)`, opacity: 0.6 },
-      { transform: `translate(${xDist * 2}px, ${yDist * 2}px) scale(1)`, opacity: 0 }
-    ], {
-      duration,
-      iterations: Infinity,
-      direction: "alternate",
-      easing: "ease-in-out"
-    });
-  }
-
-  wireControls();
-  initTilt();
-  
-  // Only start particles if already in premium mode, 
-  // otherwise they'll be started by syncUi when status changes
-  if (state.canControlPlayback) {
-    initParticles();
-  }
-
-  // Update syncUi to trigger particles
-  const originalSyncUi = syncUi;
-  syncUi = function() {
-    originalSyncUi();
-    if (state.canControlPlayback) {
-      initParticles();
+    try {
+      p.animate([
+        { transform: `translate(0, 0) scale(1)`, opacity: p.style.opacity },
+        { transform: `translate(${xDist}px, ${yDist}px) scale(1.5)`, opacity: 0.6 },
+        { transform: `translate(${xDist * 2}px, ${yDist * 2}px) scale(1)`, opacity: 0 }
+      ], {
+        duration,
+        iterations: Infinity,
+        direction: "alternate",
+        easing: "ease-in-out"
+      });
+    } catch (e) {
+      console.warn("Particle animation not supported:", e);
     }
-  };
+  }
 
-  syncUi();
+  try {
+    wireControls();
+    initTilt();
+    console.log("Spotify Mini Player UI Initialized");
+    document.body.classList.add("ready");
+    syncUi();
+  } catch (e) {
+    console.error("Initialization failed:", e);
+  }
 })();

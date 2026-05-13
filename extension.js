@@ -15,7 +15,7 @@ const DEFAULT_SCOPES = [
   "user-read-currently-playing",
   "user-read-recently-played",
   "user-read-playback-state",
-  "user-modify-playback-state"
+  "user-modify-playback-state",
 ];
 
 function readTemplate(filePath) {
@@ -25,10 +25,8 @@ function readTemplate(filePath) {
 // Cache template to avoid blocking I/O on every webview render
 let _templateCache = null;
 function readTemplateCached(filePath) {
-  if (!_templateCache) {
-    _templateCache = fs.readFileSync(filePath, "utf8");
-  }
-  return _templateCache;
+  // Disable caching for development to ensure changes are picked up
+  return fs.readFileSync(filePath, "utf8");
 }
 
 // Escape HTML to prevent injection in loginResponse messages
@@ -49,7 +47,7 @@ function escapeHtml(str) {
 class PersistentPowerShell {
   constructor() {
     this._proc = null;
-    this._queue = [];       // { script, resolve, reject, timer }
+    this._queue = []; // { script, resolve, reject, timer }
     this._current = null;
     this._buf = "";
     this._starting = null;
@@ -66,8 +64,15 @@ class PersistentPowerShell {
     this._starting = new Promise((resolve, reject) => {
       const proc = spawn(
         "powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"],
-        { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] }
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "-",
+        ],
+        { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
       );
       proc.on("error", (err) => {
         this._proc = null;
@@ -137,24 +142,33 @@ class PersistentPowerShell {
    * @param {number} timeout - milliseconds before the call is rejected
    */
   run(script, timeout = 10000) {
-    return this._ensureStarted().then(() => new Promise((resolve, reject) => {
-      const marker = `__PS_DONE_${crypto.randomBytes(8).toString("hex")}__`;
-      const timer = setTimeout(() => {
-        // Kill and reset on timeout so the next call gets a fresh process
-        try { this._proc?.kill(); } catch {}
-        this._proc = null;
-        this._current = null;
-        reject(new Error(`PowerShell script timed out after ${timeout}ms`));
-      }, timeout);
-      const item = { script, resolve, reject, marker, timer };
-      this._queue.push(item);
-      this._drainQueue();
-    }));
+    return this._ensureStarted().then(
+      () =>
+        new Promise((resolve, reject) => {
+          const marker = `__PS_DONE_${crypto.randomBytes(8).toString("hex")}__`;
+          const timer = setTimeout(() => {
+            // Kill and reset on timeout so the next call gets a fresh process
+            try {
+              this._proc?.kill();
+            } catch {}
+            this._proc = null;
+            this._current = null;
+            reject(new Error(`PowerShell script timed out after ${timeout}ms`));
+          }, timeout);
+          const item = { script, resolve, reject, marker, timer };
+          this._queue.push(item);
+          this._drainQueue();
+        }),
+    );
   }
 
   dispose() {
-    try { this._proc?.stdin?.end(); } catch {}
-    try { this._proc?.kill(); } catch {}
+    try {
+      this._proc?.stdin?.end();
+    } catch {}
+    try {
+      this._proc?.kill();
+    } catch {}
     this._proc = null;
   }
 }
@@ -185,17 +199,25 @@ function normalizeList(value) {
     return value.filter(Boolean);
   }
   if (typeof value === "string" && value.trim()) {
-    return value.split(",").map((item) => item.trim()).filter(Boolean);
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
   return [];
 }
 
 function getTrackText(track) {
-  const artists = Array.isArray(track?.artists) ? track.artists.map((artist) => artist.name).filter(Boolean) : [];
+  const artists = Array.isArray(track?.artists)
+    ? track.artists.map((artist) => artist.name).filter(Boolean)
+    : [];
   return {
     title: track?.name || "No song playing",
     artist: artists.length ? artists.join(", ") : "Spotify",
-    albumArt: Array.isArray(track?.album?.images) && track.album.images[0] ? track.album.images[0].url : ""
+    albumArt:
+      Array.isArray(track?.album?.images) && track.album.images[0]
+        ? track.album.images[0].url
+        : "",
   };
 }
 
@@ -212,17 +234,25 @@ function formatDuration(ms) {
 }
 
 function isRenderableAlbumArt(value) {
-  return typeof value === "string" && /^(https?:\/\/|data:image\/)/i.test(value.trim());
+  return (
+    typeof value === "string" &&
+    /^(https?:\/\/|data:image\/)/i.test(value.trim())
+  );
 }
 
 function trackAlbumArt(track) {
-  const image = Array.isArray(track?.album?.images) ? track.album.images.find((entry) => isRenderableAlbumArt(entry?.url)) : null;
+  const image = Array.isArray(track?.album?.images)
+    ? track.album.images.find((entry) => isRenderableAlbumArt(entry?.url))
+    : null;
   return image?.url || "";
 }
 
 function pickPreferredAlbumArt(...candidates) {
   for (const candidate of candidates) {
-    if (typeof candidate === "string" && /^https?:\/\//i.test(candidate.trim())) {
+    if (
+      typeof candidate === "string" &&
+      /^https?:\/\//i.test(candidate.trim())
+    ) {
       return candidate.trim();
     }
   }
@@ -265,6 +295,7 @@ class SpotifyPlayerState {
     this.mode = "sidebar";
     this.lastAction = "Ready";
     this.error = "";
+    this.authStartTime = 0;
   }
 }
 
@@ -275,10 +306,15 @@ class SpotifyPlayerController {
     this.webviews = new Set();
     this.panel = undefined;
     this.sidebarView = undefined;
-    this.templatePath = context.asAbsolutePath(path.join("media", "webview.html"));
+    this.templatePath = context.asAbsolutePath(
+      path.join("media", "webview.html"),
+    );
     this.stylePath = context.asAbsolutePath(path.join("media", "webview.css"));
     this.scriptPath = context.asAbsolutePath(path.join("media", "webview.js"));
-    this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    this.statusBar = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      100,
+    );
     this.statusBar.command = "spotifyPlayer.showSidebar";
     this.statusBar.tooltip = "Spotify Mini Player";
     this.statusBar.show();
@@ -286,7 +322,7 @@ class SpotifyPlayerController {
       accessToken: "",
       refreshToken: "",
       expiresAt: 0,
-      user: null
+      user: null,
     };
     this.pendingAuth = null;
     this.server = null;
@@ -295,7 +331,8 @@ class SpotifyPlayerController {
     this.refreshDebounce = null;
 
     this.registerCommands();
-    void this.bootstrap();
+    // Bootstrap lazily to avoid extension host startup timeout
+    setTimeout(() => void this.bootstrap(), 100);
   }
 
   settings() {
@@ -304,7 +341,7 @@ class SpotifyPlayerController {
       clientId: process.env.SPOTIFY_CLIENT_ID || config.get("clientId", ""),
       redirectUri: config.get("redirectUri", DEFAULT_REDIRECT_URI),
       refreshIntervalSeconds: config.get("refreshIntervalSeconds", 3),
-      preferredDevices: normalizeList(config.get("preferredDevices", []))
+      preferredDevices: normalizeList(config.get("preferredDevices", [])),
     };
   }
 
@@ -321,35 +358,73 @@ class SpotifyPlayerController {
             }
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          vscode.window.showErrorMessage(`Spotify sidebar failed to load: ${message}`);
+          const message =
+            error instanceof Error ? error.message : String(error);
+          vscode.window.showErrorMessage(
+            `Spotify sidebar failed to load: ${message}`,
+          );
           throw error;
         }
-      }
+      },
     };
 
     this.context.subscriptions.push(
-      vscode.window.registerWebviewViewProvider("spotifyPlayer.sidebarView", sidebarProvider, {
-        webviewOptions: { retainContextWhenHidden: true }
-      }),
+      vscode.window.registerWebviewViewProvider(
+        "spotifyPlayer.sidebarView",
+        sidebarProvider,
+        {
+          webviewOptions: { retainContextWhenHidden: true },
+        },
+      ),
       vscode.commands.registerCommand("spotifyPlayer.showSidebar", () => {
-        void vscode.commands.executeCommand("workbench.view.extension.spotifyPlayerSidebar");
+        void vscode.commands.executeCommand(
+          "workbench.view.extension.spotifyPlayerSidebar",
+        );
       }),
-      vscode.commands.registerCommand("spotifyPlayer.showMiniPlayer", () => this.openMiniPlayer()),
-      vscode.commands.registerCommand("spotifyPlayer.connect", () => void this.startLogin()),
-      vscode.commands.registerCommand("spotifyPlayer.logout", () => void this.logout()),
-      vscode.commands.registerCommand("spotifyPlayer.refreshStatus", () => void this.refreshPlaybackState()),
-      vscode.commands.registerCommand("spotifyPlayer.togglePlayPause", () => void this.dispatchAction("play-pause")),
-      vscode.commands.registerCommand("spotifyPlayer.nextTrack", () => void this.dispatchAction("next-track")),
-      vscode.commands.registerCommand("spotifyPlayer.previousTrack", () => void this.dispatchAction("previous-track")),
-      vscode.commands.registerCommand("spotifyPlayer.volumeUp", () => void this.dispatchAction("volume-up")),
-      vscode.commands.registerCommand("spotifyPlayer.volumeDown", () => void this.dispatchAction("volume-down")),
-      vscode.commands.registerCommand("spotifyPlayer.toggleVoiceControl", () => void this.dispatchAction("toggle-voice")),
+      vscode.commands.registerCommand("spotifyPlayer.showMiniPlayer", () =>
+        this.openMiniPlayer(),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.connect",
+        () => void this.startLogin(),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.logout",
+        () => void this.logout(),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.refreshStatus",
+        () => void this.refreshPlaybackState(),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.togglePlayPause",
+        () => void this.dispatchAction("play-pause"),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.nextTrack",
+        () => void this.dispatchAction("next-track"),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.previousTrack",
+        () => void this.dispatchAction("previous-track"),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.volumeUp",
+        () => void this.dispatchAction("volume-up"),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.volumeDown",
+        () => void this.dispatchAction("volume-down"),
+      ),
+      vscode.commands.registerCommand(
+        "spotifyPlayer.toggleVoiceControl",
+        () => void this.dispatchAction("toggle-voice"),
+      ),
       vscode.window.onDidChangeWindowState((state) => {
         if (state.focused) {
           void this.refreshPlaybackState({ silent: true });
         }
-      })
+      }),
     );
   }
 
@@ -381,9 +456,15 @@ class SpotifyPlayerController {
   }
 
   startPolling() {
-    const intervalMs = Math.max(2, this.settings().refreshIntervalSeconds) * 1000;
-    this.pollTimer = setInterval(() => void this.refreshPlaybackState({ silent: true }), intervalMs);
-    this.context.subscriptions.push({ dispose: () => clearInterval(this.pollTimer) });
+    const intervalMs =
+      Math.max(2, this.settings().refreshIntervalSeconds) * 1000;
+    this.pollTimer = setInterval(
+      () => void this.refreshPlaybackState({ silent: true }),
+      intervalMs,
+    );
+    this.context.subscriptions.push({
+      dispose: () => clearInterval(this.pollTimer),
+    });
   }
 
   scheduleRefresh(delay = 180) {
@@ -413,7 +494,7 @@ class SpotifyPlayerController {
     return new Promise((resolve, reject) => {
       const tempScriptPath = path.join(
         os.tmpdir(),
-        `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`
+        `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}.ps1`,
       );
 
       fs.writeFile(tempScriptPath, script, "utf8", (writeError) => {
@@ -424,7 +505,14 @@ class SpotifyPlayerController {
 
         execFile(
           "powershell.exe",
-          ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", tempScriptPath],
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            tempScriptPath,
+          ],
           { windowsHide: true, timeout },
           (error, stdout, stderr) => {
             fs.unlink(tempScriptPath, () => {});
@@ -433,7 +521,7 @@ class SpotifyPlayerController {
               return;
             }
             resolve(stdout.trim());
-          }
+          },
         );
       });
     });
@@ -483,7 +571,10 @@ class SpotifyPlayerController {
       "}",
       '"@',
       `[MediaKeySender]::Send([ushort]${vkCode})`,
-      ...Array.from({ length: presses - 1 }, () => `[MediaKeySender]::Send([ushort]${vkCode})`)
+      ...Array.from(
+        { length: presses - 1 },
+        () => `[MediaKeySender]::Send([ushort]${vkCode})`,
+      ),
     ].join("\n");
 
     await this.runWindowsPowerShell(script, "spotify-media-key");
@@ -542,11 +633,18 @@ class SpotifyPlayerController {
       "  positionMs = if ($null -ne $timeline) { [int64][Math]::Round($timeline.Position.TotalMilliseconds) } else { 0 }",
       "  endTimeMs = if ($null -ne $timeline) { [int64][Math]::Round($timeline.EndTime.TotalMilliseconds) } else { 0 }",
       "  sourceApp = [string]$session.SourceAppUserModelId",
-      "} | ConvertTo-Json -Compress"
+      "} | ConvertTo-Json -Compress",
     ].join("\n");
 
-    const output = await this.runWindowsPowerShell(script, "spotify-media-state", 10000);
-    const jsonLine = String(output || "").split(/\r?\n/).filter(Boolean).pop();
+    const output = await this.runWindowsPowerShell(
+      script,
+      "spotify-media-state",
+      10000,
+    );
+    const jsonLine = String(output || "")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .pop();
     if (!jsonLine) {
       return null;
     }
@@ -571,7 +669,7 @@ class SpotifyPlayerController {
       durationMs: Math.max(0, Number(data.endTimeMs) || 0),
       deviceName: String(data.sourceApp || "Windows media session"),
       deviceType: "Windows media session",
-      source: "windows-media-session"
+      source: "windows-media-session",
     };
   }
 
@@ -583,7 +681,7 @@ class SpotifyPlayerController {
     const methodByAction = {
       "play-pause": "TryTogglePlayPauseAsync",
       "next-track": "TrySkipNextAsync",
-      "previous-track": "TrySkipPreviousAsync"
+      "previous-track": "TrySkipPreviousAsync",
     };
     const methodName = methodByAction[action];
     if (!methodName) {
@@ -608,7 +706,7 @@ class SpotifyPlayerController {
       `$operation = $session.${methodName}()`,
       "$result = AwaitOperation $operation ([bool])",
       "if (-not $result) { throw 'Windows media session rejected the command.' }",
-      "'ok'"
+      "'ok'",
     ].join("\n");
 
     await this.runWindowsPowerShell(script, "spotify-media-control", 10000);
@@ -640,7 +738,7 @@ class SpotifyPlayerController {
       `$operation = $session.TryChangePlaybackPositionAsync([Int64]${ticks})`,
       "$result = AwaitOperation $operation ([bool])",
       "if (-not $result) { throw 'Windows media session rejected the seek request.' }",
-      "'ok'"
+      "'ok'",
     ].join("\n");
 
     await this.runWindowsPowerShell(script, "spotify-media-seek", 10000);
@@ -654,40 +752,37 @@ class SpotifyPlayerController {
     try {
       const media = await this.readWindowsMediaSession();
       if (media) {
+        // Optimization: Skip artwork search if the track hasn't changed
+        const trackChanged =
+          this.state.title !== media.title ||
+          this.state.artist !== media.artist;
+        let art = isRenderableAlbumArt(media.albumArt)
+          ? media.albumArt
+          : this.state.albumArt || "";
+
+        if (trackChanged && !art) {
+          try {
+            const publicArt = await this.searchPublicTrackArtwork(
+              media.title,
+              media.artist,
+            );
+            if (publicArt) art = publicArt;
+          } catch {
+            /* best-effort */
+          }
+        }
+
         this.state.playing = media.playing;
         this.state.title = media.title;
         this.state.artist = media.artist;
+        this.state.albumArt = art;
         this.state.progressMs = Math.max(0, media.progressMs || 0);
         this.state.durationMs = Math.max(0, media.durationMs || 0);
         this.state.progressLabel = formatDuration(this.state.progressMs);
         this.state.durationLabel = formatDuration(this.state.durationMs);
         this.state.deviceName = media.deviceName;
         this.state.deviceType = media.deviceType;
-        this.state.debugSource = media.source;
 
-        // Prefer Windows thumbnail; fall back to iTunes if unavailable or corrupt
-        let art = isRenderableAlbumArt(media.albumArt) ? media.albumArt : (this.state.albumArt || "");
-        let artSource = art ? "windows-thumbnail" : "none";
-
-        // If no renderable art yet, try iTunes public search (no auth needed)
-        if (!art) {
-          try {
-            art = await this.searchPublicTrackArtwork(media.title, media.artist);
-            if (art) artSource = "public-search";
-          } catch { /* best-effort */ }
-        }
-
-        this.state.albumArt = art;
-        this.state.debugSummary = [
-          "source=windows-media-session",
-          `playing=${media.playing}`,
-          `title=${media.title}`,
-          `artist=${media.artist}`,
-          `art=${art ? "yes" : "no"}`,
-          `artSource=${artSource}`,
-          `device=${media.deviceName || "none"}`,
-          `tier=${this.state.accountMode}`
-        ].join(" | ");
         this.state.error = "";
         this.pushState();
         return media;
@@ -702,19 +797,15 @@ class SpotifyPlayerController {
         this.state.durationMs = 0;
         this.state.progressLabel = "0:00";
         this.state.durationLabel = "0:00";
-        this.state.deviceName = isWindows() ? "Windows media controls" : "Open Spotify in browser";
+        this.state.deviceName = isWindows()
+          ? "Windows media controls"
+          : "Open Spotify in browser";
         this.state.deviceType = isWindows() ? "Basic mode" : "Manual mode";
       }
-      this.state.debugSource = "basic-mode";
-      this.state.debugSummary = isWindows()
-        ? "No active Windows media session was found. Start Spotify in the desktop app or browser, then refresh."
-        : "System media controls are only implemented for Windows in this build.";
       this.pushState();
       return null;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.state.debugSource = "basic-mode-error";
-      this.state.debugSummary = message;
       if (!silent) {
         this.state.error = message;
       }
@@ -744,8 +835,6 @@ class SpotifyPlayerController {
       this.state.volume = 70;
       this.state.error = "";
       this.state.lastAction = "Disconnected from Spotify";
-      this.state.debugSource = "signed-out";
-      this.state.debugSummary = "Disconnected from Spotify.";
       this.updateAuthState(false, "Not connected");
       this.pushState();
       vscode.window.showInformationMessage("Disconnected from Spotify.");
@@ -759,10 +848,15 @@ class SpotifyPlayerController {
   }
 
   updatePlaybackMode() {
-    const isPremium = this.state.authenticated && this.state.product === "premium";
+    const isPremium =
+      this.state.authenticated && this.state.product === "premium";
     this.state.canControlPlayback = isPremium;
     this.state.basicControlsAvailable = isWindows();
-    this.state.accountMode = !this.state.authenticated ? "desktop" : (isPremium ? "premium" : "free-desktop");
+    this.state.accountMode = !this.state.authenticated
+      ? "desktop"
+      : isPremium
+        ? "premium"
+        : "free-desktop";
     this.state.tierMessage = !this.state.authenticated
       ? "Basic controls use Windows media keys and do not require Spotify Premium."
       : isPremium
@@ -775,72 +869,104 @@ class SpotifyPlayerController {
       return;
     }
 
-    const { redirectUri } = this.settings();
-    const redirect = new URL(redirectUri);
-    const port = Number(redirect.port || (redirect.protocol === "https:" ? 443 : 80));
-    const expectedPath = redirect.pathname;
+    if (this._startingServer) {
+      return this._startingServer;
+    }
 
-    this.server = http.createServer((req, res) => {
-      try {
-        const requestUrl = new URL(req.url || "/", redirectUri);
-        if (requestUrl.pathname !== expectedPath) {
-          res.statusCode = 404;
-          res.end("Not found");
-          return;
-        }
+    this._startingServer = (async () => {
+      const { redirectUri } = this.settings();
+      const redirect = new URL(redirectUri);
+      const port = Number(redirect.port || (redirect.protocol === "https:" ? 443 : 80));
+      const expectedPath = redirect.pathname;
 
-        const error = requestUrl.searchParams.get("error");
-        const code = requestUrl.searchParams.get("code");
-        const state = requestUrl.searchParams.get("state");
+      this.server = http.createServer((req, res) => {
+        try {
+          const requestUrl = new URL(req.url || "/", redirectUri);
+          if (requestUrl.pathname !== expectedPath) {
+            res.statusCode = 404;
+            res.end("Not found");
+            return;
+          }
 
-        if (error) {
-          res.statusCode = 400;
+          const error = requestUrl.searchParams.get("error");
+          const code = requestUrl.searchParams.get("code");
+          const state = requestUrl.searchParams.get("state");
+
+          if (error) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.end(this.loginResponse(`Spotify login failed: ${error}`));
+            void this.failAuth(`Spotify login failed: ${error}`);
+            return;
+          }
+
+          if (!this.pendingAuth) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.end(
+              this.loginResponse(
+                "Spotify login could not be completed: the extension lost the pending login session. Click Connect again and do not reload the extension host while signing in.",
+              ),
+            );
+            return;
+          }
+
+          if (!code) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.end(
+              this.loginResponse(
+                "Spotify login could not be completed: Spotify did not return an authorization code. Check that the redirect URI matches exactly.",
+              ),
+            );
+            return;
+          }
+
+          if (state !== this.pendingAuth.state) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.end(
+              this.loginResponse(
+                "Login failed: state parameter mismatch. Please try connecting again.",
+              ),
+            );
+            void this.failAuth(
+              "OAuth state mismatch — login attempt rejected for security.",
+            );
+            return;
+          }
+
+          res.statusCode = 200;
           res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.end(this.loginResponse(`Spotify login failed: ${error}`));
-          void this.failAuth(`Spotify login failed: ${error}`);
-          return;
-        }
+          res.end(
+            this.loginResponse(
+              "Spotify is connected. You can return to VS Code.",
+            ),
+          );
 
-        if (!this.pendingAuth) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.end(this.loginResponse("Spotify login could not be completed: the extension lost the pending login session. Click Connect again and do not reload the extension host while signing in."));
-          return;
-        }
-
-        if (!code) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.end(this.loginResponse("Spotify login could not be completed: Spotify did not return an authorization code. Check that the redirect URI matches exactly."));
-          return;
-        }
-
-        if (state !== this.pendingAuth.state) {
-          res.statusCode = 400;
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.end(this.loginResponse("Login failed: state parameter mismatch. Please try connecting again."));
-          void this.failAuth("OAuth state mismatch — login attempt rejected for security.");
-          return;
-        }
-
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.end(this.loginResponse("Spotify is connected. You can return to VS Code."));
-
-        void this.finishAuth(code).catch((err) => {
+          void this.finishAuth(code).catch((err) => {
+            void this.failAuth(err instanceof Error ? err.message : String(err));
+          });
+        } catch (err) {
+          res.statusCode = 500;
+          res.end("Internal error");
           void this.failAuth(err instanceof Error ? err.message : String(err));
-        });
-      } catch (err) {
-        res.statusCode = 500;
-        res.end("Internal error");
-        void this.failAuth(err instanceof Error ? err.message : String(err));
-      }
-    });
+        }
+      });
 
-    await new Promise((resolve, reject) => {
-      this.server.once("error", reject);
-      this.server.listen(port, "127.0.0.1", resolve);
-    });
+      try {
+        await new Promise((resolve, reject) => {
+          this.server.once("error", (err) => {
+            this.server = null;
+            reject(err);
+          });
+          this.server.listen(port, "127.0.0.1", resolve);
+        });
+      } finally {
+        this._startingServer = null;
+      }
+    })();
+    return this._startingServer;
   }
 
   loginResponse(message) {
@@ -851,40 +977,62 @@ class SpotifyPlayerController {
   async startLogin() {
     const { clientId, redirectUri } = this.settings();
     if (!clientId) {
-      vscode.window.showErrorMessage("Set spotifyPlayer.clientId in VS Code settings or SPOTIFY_CLIENT_ID in your environment.");
-      this.state.lastAction = "Missing Spotify client ID";
+      vscode.window.showErrorMessage(
+        "Set spotifyPlayer.clientId in VS Code settings or SPOTIFY_CLIENT_ID in your environment.",
+      );
       this.pushState();
       return;
+    }
+
+    // Auto-reset stuck auth if more than 2 minutes have passed
+    const now = Date.now();
+    if (
+      this.state.authInProgress &&
+      this.state.authStartTime &&
+      now - this.state.authStartTime > 120000
+    ) {
+      console.log("[Auth] Resetting stuck login attempt...");
+      this.pendingAuth = null;
+      this.state.authInProgress = false;
     }
 
     if (this.pendingAuth || this.state.authInProgress) {
-      vscode.window.showInformationMessage("Spotify login is already in progress. Finish the current browser sign-in first.");
-      this.state.lastAction = "Spotify login already in progress";
+      vscode.window.showInformationMessage(
+        "Spotify login is already in progress. Finish the current browser sign-in first.",
+      );
       this.pushState();
       return;
     }
 
-    await this.ensureServer();
-    const codeVerifier = randomString(96);
-    const state = randomString(24);
-    this.pendingAuth = { codeVerifier, state, redirectUri };
-    this.state.authInProgress = true;
+    try {
+      await this.ensureServer();
+      const codeVerifier = randomString(96);
+      const state = randomString(24);
+      this.pendingAuth = { codeVerifier, state, redirectUri };
+      this.state.authInProgress = true;
+      this.state.authStartTime = Date.now();
 
-    const authUrl = buildUrl(`${SPOTIFY_AUTH}/authorize`, {
-      client_id: clientId,
-      response_type: "code",
-      redirect_uri: redirectUri,
-      scope: DEFAULT_SCOPES.join(" "),
-      code_challenge_method: "S256",
-      code_challenge: challenge(codeVerifier),
-      state,
-      show_dialog: "true"
-    });
+      const authUrl = buildUrl(`${SPOTIFY_AUTH}/authorize`, {
+        client_id: clientId,
+        response_type: "code",
+        redirect_uri: redirectUri,
+        scope: DEFAULT_SCOPES.join(" "),
+        code_challenge_method: "S256",
+        code_challenge: challenge(codeVerifier),
+        state,
+        show_dialog: "true",
+      });
 
-    this.updateAuthState(false, "Waiting for Spotify sign-in");
-    this.state.lastAction = "Opening Spotify sign-in";
-    this.pushState();
-    await vscode.env.openExternal(vscode.Uri.parse(authUrl));
+      this.updateAuthState(false, "Waiting for Spotify sign-in");
+      this.pushState();
+      await vscode.env.openExternal(vscode.Uri.parse(authUrl));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.state.authInProgress = false;
+      this.pendingAuth = null;
+      vscode.window.showErrorMessage(`Failed to start Spotify login: ${message}`);
+      this.pushState();
+    }
   }
 
   async finishAuth(code) {
@@ -898,17 +1046,19 @@ class SpotifyPlayerController {
       grant_type: "authorization_code",
       code,
       redirect_uri: this.pendingAuth.redirectUri,
-      code_verifier: this.pendingAuth.codeVerifier
+      code_verifier: this.pendingAuth.codeVerifier,
     });
 
     const response = await fetch(`${SPOTIFY_AUTH}/api/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body
+      body,
     });
 
     if (!response.ok) {
-      throw new Error(`Spotify token exchange failed: ${response.status} ${await response.text()}`);
+      throw new Error(
+        `Spotify token exchange failed: ${response.status} ${await response.text()}`,
+      );
     }
 
     const data = await response.json();
@@ -916,7 +1066,8 @@ class SpotifyPlayerController {
     this.pendingAuth = null;
     this.state.authInProgress = false;
     this.updateAuthState(true, "Spotify connected");
-    this.state.lastAction = "Spotify connected";
+    console.log("[Auth] Token exchange successful, pushing state.");
+    this.pushState(); // Explicit force push
     vscode.window.showInformationMessage("Spotify connected successfully.");
     await this.refreshPlaybackState({ silent: true });
   }
@@ -925,7 +1076,6 @@ class SpotifyPlayerController {
     this.pendingAuth = null;
     this.state.authInProgress = false;
     this.updateAuthState(false, message);
-    this.state.lastAction = message;
     this.state.error = message;
     this.pushState();
     vscode.window.showErrorMessage(message);
@@ -933,20 +1083,23 @@ class SpotifyPlayerController {
 
   async applyTokenData(data) {
     this.session.accessToken = data.access_token;
-    this.session.expiresAt = Date.now() + Math.max(0, (Number(data.expires_in) || 3600) - 60) * 1000;
+    this.session.expiresAt =
+      Date.now() + Math.max(0, (Number(data.expires_in) || 3600) - 60) * 1000;
     if (data.refresh_token) {
       await this.saveRefreshToken(data.refresh_token);
     }
 
     const me = await fetch(`${SPOTIFY_API}/me`, {
-      headers: { Authorization: `Bearer ${this.session.accessToken}` }
+      headers: { Authorization: `Bearer ${this.session.accessToken}` },
     });
     if (me.ok) {
       this.session.user = await me.json();
-      this.state.userName = this.session.user.display_name || this.session.user.id || "";
+      this.state.userName =
+        this.session.user.display_name || this.session.user.id || "";
       this.state.product = this.session.user.product || "";
       this.state.error = "";
       this.updatePlaybackMode();
+      this.pushState(); // Force UI update
     } else {
       const errorBody = await me.text().catch(() => "Unknown error");
       this.state.error = `Profile fetch failed (${me.status}): ${errorBody}`;
@@ -966,7 +1119,9 @@ class SpotifyPlayerController {
     const { clientId } = this.settings();
     if (!clientId) {
       if (!silent) {
-        vscode.window.showErrorMessage("Set spotifyPlayer.clientId before connecting to Spotify.");
+        vscode.window.showErrorMessage(
+          "Set spotifyPlayer.clientId before connecting to Spotify.",
+        );
       }
       return "";
     }
@@ -975,31 +1130,42 @@ class SpotifyPlayerController {
       const body = new URLSearchParams({
         client_id: clientId,
         grant_type: "refresh_token",
-        refresh_token: this.session.refreshToken
+        refresh_token: this.session.refreshToken,
       });
 
       const response = await fetch(`${SPOTIFY_AUTH}/api/token`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body
+        body,
       });
 
       if (!response.ok) {
-        throw new Error(`Spotify token refresh failed: ${response.status} ${await response.text()}`);
+        const text = await response.text();
+        // If the refresh token is invalid/revoked (HTTP 400 or 401), clear the session
+        if (response.status === 400 || response.status === 401) {
+          console.warn("[Auth] Refresh token invalid. Clearing session.");
+          void this.saveRefreshToken("");
+          this.session.refreshToken = "";
+          this.updateAuthState(false, "Session expired - Please reconnect");
+        }
+        throw new Error(
+          `Spotify token refresh failed: ${response.status} ${text}`,
+        );
       }
 
       const data = await response.json();
       await this.applyTokenData(data);
-      const productLabel = this.session.user?.product === "premium"
-        ? "Premium account"
-        : this.session.user?.product === "free"
-          ? "Free account"
-          : "Spotify account";
+      const productLabel =
+        this.session.user?.product === "premium"
+          ? "Premium account"
+          : this.session.user?.product === "free"
+            ? "Free account"
+            : "Spotify account";
       this.updateAuthState(
         true,
         this.session.user?.display_name
           ? `Connected as ${this.session.user.display_name} - ${productLabel}`
-          : `Connected to Spotify - ${productLabel}`
+          : `Connected to Spotify - ${productLabel}`,
       );
       return this.session.accessToken;
     })();
@@ -1009,7 +1175,9 @@ class SpotifyPlayerController {
     } catch (error) {
       this.session.accessToken = "";
       if (!silent) {
-        vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+        vscode.window.showErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
       }
       throw error;
     } finally {
@@ -1044,7 +1212,7 @@ class SpotifyPlayerController {
 
     const request = {
       method: options.method || "GET",
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
     };
     if (options.body !== undefined) {
       request.headers["Content-Type"] = "application/json";
@@ -1056,7 +1224,10 @@ class SpotifyPlayerController {
       await this.refreshAccessToken(true);
       response = await fetch(url.toString(), {
         ...request,
-        headers: { ...request.headers, Authorization: `Bearer ${this.session.accessToken}` }
+        headers: {
+          ...request.headers,
+          Authorization: `Bearer ${this.session.accessToken}`,
+        },
       });
     }
     return response;
@@ -1068,7 +1239,9 @@ class SpotifyPlayerController {
       return null;
     }
     if (!response.ok) {
-      throw new Error(`Failed to load playback state: ${response.status} ${await response.text()}`);
+      throw new Error(
+        `Failed to load playback state: ${response.status} ${await response.text()}`,
+      );
     }
     return response.json();
   }
@@ -1079,7 +1252,9 @@ class SpotifyPlayerController {
       return null;
     }
     if (!response.ok) {
-      throw new Error(`Failed to load current track: ${response.status} ${await response.text()}`);
+      throw new Error(
+        `Failed to load current track: ${response.status} ${await response.text()}`,
+      );
     }
     return response.json();
   }
@@ -1087,10 +1262,13 @@ class SpotifyPlayerController {
   async recentlyPlayed() {
     const response = await this.api("/me/player/recently-played?limit=1");
     if (!response.ok) {
-      throw new Error(`Failed to load recently played tracks: ${response.status} ${await response.text()}`);
+      throw new Error(
+        `Failed to load recently played tracks: ${response.status} ${await response.text()}`,
+      );
     }
     const data = await response.json();
-    const latest = Array.isArray(data.items) && data.items.length ? data.items[0] : null;
+    const latest =
+      Array.isArray(data.items) && data.items.length ? data.items[0] : null;
     if (!latest?.track) {
       return null;
     }
@@ -1098,21 +1276,25 @@ class SpotifyPlayerController {
       item: latest.track,
       is_playing: false,
       device: null,
-      source: "recently-played"
+      source: "recently-played",
     };
   }
 
   async devices() {
     const response = await this.api("/me/player/devices");
     if (!response.ok) {
-      throw new Error(`Failed to load devices: ${response.status} ${await response.text()}`);
+      throw new Error(
+        `Failed to load devices: ${response.status} ${await response.text()}`,
+      );
     }
     const data = await response.json();
     return Array.isArray(data.devices) ? data.devices : [];
   }
 
   async searchTrackArtwork(title, artist) {
-    const queryParts = [title, artist].filter((value) => typeof value === "string" && value.trim());
+    const queryParts = [title, artist].filter(
+      (value) => typeof value === "string" && value.trim(),
+    );
     if (!queryParts.length) {
       return "";
     }
@@ -1121,7 +1303,7 @@ class SpotifyPlayerController {
       `track:${title} artist:${artist}`,
       `${title} ${artist}`,
       title,
-      artist
+      artist,
     ].filter((value) => typeof value === "string" && value.trim());
 
     for (const query of queries) {
@@ -1129,28 +1311,54 @@ class SpotifyPlayerController {
         query: {
           q: query,
           type: "track",
-          limit: 10
-        }
+          limit: 10,
+        },
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to search Spotify artwork: ${response.status} ${await response.text()}`);
+        throw new Error(
+          `Failed to search Spotify artwork: ${response.status} ${await response.text()}`,
+        );
       }
 
       const data = await response.json();
       const items = Array.isArray(data?.tracks?.items) ? data.tracks.items : [];
-      const normalizedTitle = String(title || "").trim().toLowerCase();
-      const normalizedArtist = String(artist || "").trim().toLowerCase();
+      const normalizedTitle = String(title || "")
+        .trim()
+        .toLowerCase();
+      const normalizedArtist = String(artist || "")
+        .trim()
+        .toLowerCase();
 
-      const match = items.find((item) => {
-        const itemTitle = String(item?.name || "").trim().toLowerCase();
-        const itemArtists = Array.isArray(item?.artists)
-          ? item.artists.map((entry) => String(entry?.name || "").trim().toLowerCase()).filter(Boolean)
-          : [];
-        const titleMatches = !normalizedTitle || itemTitle.includes(normalizedTitle) || normalizedTitle.includes(itemTitle);
-        const artistMatches = !normalizedArtist || itemArtists.some((name) => name.includes(normalizedArtist) || normalizedArtist.includes(name));
-        return titleMatches && artistMatches;
-      }) || items.find((item) => trackAlbumArt(item)) || items[0];
+      const match =
+        items.find((item) => {
+          const itemTitle = String(item?.name || "")
+            .trim()
+            .toLowerCase();
+          const itemArtists = Array.isArray(item?.artists)
+            ? item.artists
+                .map((entry) =>
+                  String(entry?.name || "")
+                    .trim()
+                    .toLowerCase(),
+                )
+                .filter(Boolean)
+            : [];
+          const titleMatches =
+            !normalizedTitle ||
+            itemTitle.includes(normalizedTitle) ||
+            normalizedTitle.includes(itemTitle);
+          const artistMatches =
+            !normalizedArtist ||
+            itemArtists.some(
+              (name) =>
+                name.includes(normalizedArtist) ||
+                normalizedArtist.includes(name),
+            );
+          return titleMatches && artistMatches;
+        }) ||
+        items.find((item) => trackAlbumArt(item)) ||
+        items[0];
 
       const artwork = trackAlbumArt(match);
       if (artwork) {
@@ -1162,7 +1370,9 @@ class SpotifyPlayerController {
   }
 
   async searchPublicTrackArtwork(title, artist) {
-    const queryParts = [title, artist].filter((value) => typeof value === "string" && value.trim());
+    const queryParts = [title, artist].filter(
+      (value) => typeof value === "string" && value.trim(),
+    );
     if (!queryParts.length) {
       return "";
     }
@@ -1175,28 +1385,47 @@ class SpotifyPlayerController {
 
     const response = await fetch(url.toString(), {
       headers: {
-        Accept: "application/json"
-      }
+        Accept: "application/json",
+      },
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to load public artwork: ${response.status} ${await response.text()}`);
+      throw new Error(
+        `Failed to load public artwork: ${response.status} ${await response.text()}`,
+      );
     }
 
     const data = await response.json();
     const results = Array.isArray(data?.results) ? data.results : [];
-    const normalizedTitle = String(title || "").trim().toLowerCase();
-    const normalizedArtist = String(artist || "").trim().toLowerCase();
+    const normalizedTitle = String(title || "")
+      .trim()
+      .toLowerCase();
+    const normalizedArtist = String(artist || "")
+      .trim()
+      .toLowerCase();
 
-    const match = results.find((item) => {
-      const itemTitle = String(item?.trackName || "").trim().toLowerCase();
-      const itemArtist = String(item?.artistName || "").trim().toLowerCase();
-      const titleMatches = !normalizedTitle || itemTitle.includes(normalizedTitle) || normalizedTitle.includes(itemTitle);
-      const artistMatches = !normalizedArtist || itemArtist.includes(normalizedArtist) || normalizedArtist.includes(itemArtist);
-      return titleMatches && artistMatches;
-    }) || results[0];
+    const match =
+      results.find((item) => {
+        const itemTitle = String(item?.trackName || "")
+          .trim()
+          .toLowerCase();
+        const itemArtist = String(item?.artistName || "")
+          .trim()
+          .toLowerCase();
+        const titleMatches =
+          !normalizedTitle ||
+          itemTitle.includes(normalizedTitle) ||
+          normalizedTitle.includes(itemTitle);
+        const artistMatches =
+          !normalizedArtist ||
+          itemArtist.includes(normalizedArtist) ||
+          normalizedArtist.includes(itemArtist);
+        return titleMatches && artistMatches;
+      }) || results[0];
 
-    const artwork = String(match?.artworkUrl100 || match?.artworkUrl60 || "").trim();
+    const artwork = String(
+      match?.artworkUrl100 || match?.artworkUrl60 || "",
+    ).trim();
     if (!artwork) {
       return "";
     }
@@ -1205,24 +1434,32 @@ class SpotifyPlayerController {
   }
 
   pickDevice(devices) {
-    const preferred = this.settings().preferredDevices.map((item) => item.toLowerCase());
+    const preferred = this.settings().preferredDevices.map((item) =>
+      item.toLowerCase(),
+    );
     for (const name of preferred) {
-      const match = devices.find((device) => (device.name || "").toLowerCase().includes(name));
+      const match = devices.find((device) =>
+        (device.name || "").toLowerCase().includes(name),
+      );
       if (match) {
         return match;
       }
     }
-    return devices.find((device) => device.is_active && !device.is_restricted) ||
+    return (
+      devices.find((device) => device.is_active && !device.is_restricted) ||
       devices.find((device) => !device.is_restricted) ||
       devices[0] ||
-      null;
+      null
+    );
   }
 
   async activeDevice() {
     const devices = await this.devices();
     const device = this.pickDevice(devices);
     if (!device) {
-      throw new Error("No Spotify device is available. Open Spotify Desktop or the web player first.");
+      throw new Error(
+        "No Spotify device is available. Open Spotify Desktop or the web player first.",
+      );
     }
     if (!device.is_active) {
       throw new Error("Open Spotify on an active device first.");
@@ -1234,12 +1471,14 @@ class SpotifyPlayerController {
     const devices = await this.devices();
     const device = this.pickDevice(devices);
     if (!device) {
-      throw new Error("No Spotify device is available. Open Spotify Desktop or the web player first.");
+      throw new Error(
+        "No Spotify device is available. Open Spotify Desktop or the web player first.",
+      );
     }
     if (!device.is_active) {
       await this.api("/me/player", {
         method: "PUT",
-        body: { device_ids: [device.id], play: false }
+        body: { device_ids: [device.id], play: false },
       });
     }
     return device;
@@ -1250,11 +1489,10 @@ class SpotifyPlayerController {
     const device = await this.activeDevice();
     await this.api("/me/player/volume", {
       method: "PUT",
-      query: { volume_percent: target, device_id: device.id }
+      query: { volume_percent: target, device_id: device.id },
     });
     this.state.volume = target;
     this.state.deviceVolume = target;
-    this.state.lastAction = `Spotify volume set to ${target}%.`;
     this.state.error = "";
     this.pushState();
     this.scheduleRefresh(180);
@@ -1265,11 +1503,10 @@ class SpotifyPlayerController {
     await this.activeDevice();
     await this.api("/me/player/seek", {
       method: "PUT",
-      query: { position_ms: target }
+      query: { position_ms: target },
     });
     this.state.progressMs = target;
     this.state.progressLabel = formatDuration(target);
-    this.state.lastAction = `Seeked to ${this.state.progressLabel}.`;
     this.state.error = "";
     this.pushState();
     this.scheduleRefresh(120);
@@ -1277,11 +1514,13 @@ class SpotifyPlayerController {
 
   async seekPosition(positionMs) {
     const target = Math.max(0, Math.round(positionMs));
-    const cappedTarget = this.state.durationMs > 0 ? Math.min(target, this.state.durationMs) : target;
+    const cappedTarget =
+      this.state.durationMs > 0
+        ? Math.min(target, this.state.durationMs)
+        : target;
 
     this.state.progressMs = cappedTarget;
     this.state.progressLabel = formatDuration(cappedTarget);
-    this.state.lastAction = `Seeking to ${this.state.progressLabel}...`;
     this.state.error = "";
     this.pushState();
 
@@ -1292,14 +1531,15 @@ class SpotifyPlayerController {
 
     if (isWindows()) {
       await this.seekWindowsMediaSession(cappedTarget);
-      this.state.lastAction = `Seeked to ${this.state.progressLabel}.`;
       this.state.error = "";
       this.pushState();
       this.scheduleRefresh(120);
       return;
     }
 
-    throw new Error("Seeking is only available for Spotify Premium or Windows desktop media session mode.");
+    throw new Error(
+      "Seeking is only available for Spotify Premium or Windows desktop media session mode.",
+    );
   }
 
   async setWindowsMasterVolume(value) {
@@ -1313,16 +1553,16 @@ class SpotifyPlayerController {
       'Add-Type -TypeDefinition @"',
       "using System;",
       "using System.Runtime.InteropServices;",
-      "[Guid(\"BCDE0395-E52F-467C-8E3D-C4579291692E\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IMMDeviceEnumerator {",
       "  int NotImpl1();",
       "  int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);",
       "}",
-      "[Guid(\"D666063F-1587-4E43-81F1-B948E807363F\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IMMDevice {",
       "  int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, out IAudioEndpointVolume ppInterface);",
       "}",
-      "[Guid(\"5CDF2C82-841E-4546-9722-0CF74078229A\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IAudioEndpointVolume {",
       "  int RegisterControlChangeNotify(IntPtr pNotify);",
       "  int UnregisterControlChangeNotify(IntPtr pNotify);",
@@ -1343,7 +1583,7 @@ class SpotifyPlayerController {
       "  int QueryHardwareSupport(out uint pdwHardwareSupportMask);",
       "  int GetVolumeRange(out float pflVolumeMindB, out float pflVolumeMaxdB, out float pflVolumeIncrementdB);",
       "}",
-      "[ComImport, Guid(\"BCDE0395-E52F-467C-8E3D-C4579291692E\"), ClassInterface(ClassInterfaceType.None)]",
+      '[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"), ClassInterface(ClassInterfaceType.None)]',
       "class MMDeviceEnumeratorComObject { }",
       "public static class VolumeSetter {",
       "  public static void Set(float level) {",
@@ -1358,13 +1598,12 @@ class SpotifyPlayerController {
       "  }",
       "}",
       '"@',
-      `[VolumeSetter]::Set([float]${scalar})`
+      `[VolumeSetter]::Set([float]${scalar})`,
     ].join("\n");
 
     await this.runWindowsPowerShell(script, "spotify-master-volume", 10000);
     this.state.deviceVolume = target;
     this.state.volume = target;
-    this.state.lastAction = `Set Windows volume to ${target}%.`;
     this.state.error = "";
     this.pushState();
     return true;
@@ -1382,9 +1621,9 @@ class SpotifyPlayerController {
       "using System;",
       "using System.Diagnostics;",
       "using System.Runtime.InteropServices;",
-      "[ComImport, Guid(\"BCDE0395-E52F-467C-8E3D-C4579291692E\"), ClassInterface(ClassInterfaceType.None)]",
+      '[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E"), ClassInterface(ClassInterfaceType.None)]',
       "class MMDeviceEnumeratorComObject { }",
-      "[Guid(\"A95664D2-9614-4F35-A746-DE8DB63617E6\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IMMDeviceEnumerator {",
       "  int EnumAudioEndpoints(int dataFlow, int dwStateMask, IntPtr ppDevices);",
       "  int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);",
@@ -1392,11 +1631,11 @@ class SpotifyPlayerController {
       "  int RegisterEndpointNotificationCallback(IntPtr pClient);",
       "  int UnregisterEndpointNotificationCallback(IntPtr pClient);",
       "}",
-      "[Guid(\"D666063F-1587-4E43-81F1-B948E807363F\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IMMDevice {",
       "  int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, out IAudioSessionManager2 ppInterface);",
       "}",
-      "[Guid(\"77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IAudioSessionManager2 {",
       "  int GetAudioSessionControl(IntPtr AudioSessionGuid, int StreamFlags, out IntPtr SessionControl);",
       "  int GetSimpleAudioVolume(IntPtr AudioSessionGuid, int StreamFlags, out IntPtr AudioVolume);",
@@ -1406,12 +1645,12 @@ class SpotifyPlayerController {
       "  int RegisterDuckNotification(string sessionID, IntPtr duckNotification);",
       "  int UnregisterDuckNotification(IntPtr duckNotification);",
       "}",
-      "[Guid(\"E2F5BB11-0570-40CA-ACDD-3AA01277DEE8\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IAudioSessionEnumerator {",
       "  int GetCount(out int SessionCount);",
       "  int GetSession(int SessionCount, out IAudioSessionControl2 Session);",
       "}",
-      "[Guid(\"BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface IAudioSessionControl2 {",
       "  int GetState(out int pRetVal);",
       "  int GetDisplayName(out IntPtr pRetVal);",
@@ -1428,7 +1667,7 @@ class SpotifyPlayerController {
       "  int IsSystemSoundsSession();",
       "  int SetDuckingPreference(bool optOut);",
       "}",
-      "[Guid(\"87CE5498-68D6-44E5-9215-6DA47EF883D8\"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]",
+      '[Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
       "interface ISimpleAudioVolume {",
       "  int SetMasterVolume(float fLevel, ref Guid EventContext);",
       "  int GetMasterVolume(out float pfLevel);",
@@ -1456,7 +1695,7 @@ class SpotifyPlayerController {
       "      if (control.GetProcessId(out pid) != 0 || pid == 0) continue;",
       "      string name = string.Empty;",
       "      try { name = Process.GetProcessById((int)pid).ProcessName; } catch { continue; }",
-      "      if (name.IndexOf(\"Spotify\", StringComparison.OrdinalIgnoreCase) >= 0) {",
+      '      if (name.IndexOf("Spotify", StringComparison.OrdinalIgnoreCase) >= 0) {',
       "        ISimpleAudioVolume volume = (ISimpleAudioVolume)control;",
       "        Marshal.ThrowExceptionForHR(volume.SetMasterVolume(level, ref context));",
       "        changed++;",
@@ -1468,13 +1707,12 @@ class SpotifyPlayerController {
       '"@',
       `$changed = [SpotifyAppVolume]::Set([float]${scalar})`,
       "if ($changed -lt 1) { throw 'No Spotify audio session was found. Play a song in Spotify Desktop first.' }",
-      "'ok'"
+      "'ok'",
     ].join("\n");
 
     await this.runWindowsPowerShell(script, "spotify-app-volume", 10000);
     this.state.deviceVolume = target;
     this.state.volume = target;
-    this.state.lastAction = `Set Spotify app volume to ${target}%.`;
     this.state.error = "";
     this.pushState();
     return true;
@@ -1490,15 +1728,14 @@ class SpotifyPlayerController {
       const target = Math.max(0, Math.min(100, Math.round(value)));
       this.state.deviceVolume = target;
       this.state.volume = target;
-      this.state.lastAction = `Changing volume to ${target}%.`;
       this.state.error = "";
       this.pushState();
       try {
         await this.setSpotifyAppVolume(target);
       } catch (error) {
         await this.setWindowsMasterVolume(target);
-        this.state.lastAction = `Spotify app volume was unavailable, set Windows volume to ${target}%.`;
-        this.state.error = error instanceof Error ? error.message : String(error);
+        this.state.error =
+          error instanceof Error ? error.message : String(error);
         this.pushState();
       }
       this.scheduleRefresh(180);
@@ -1506,34 +1743,29 @@ class SpotifyPlayerController {
     }
 
     await vscode.env.openExternal(vscode.Uri.parse("https://open.spotify.com"));
-    this.state.lastAction = "Opened Spotify for manual volume adjustment.";
-    this.state.error = "";
-    this.pushState();
   }
 
   async basicPlaybackFallback() {
     try {
       if (isWindows()) {
         this.state.playing = !this.state.playing;
-        this.state.lastAction = this.state.playing ? "Playing..." : "Pausing...";
         this.state.error = "";
         this.pushState();
         try {
           await this.controlWindowsMediaSession("play-pause");
         } catch {
-          await this.sendWindowsMediaKey(0xB3);
+          await this.sendWindowsMediaKey(0xb3);
         }
-        this.state.lastAction = "Sent play / pause to Spotify Desktop.";
       } else {
-        await vscode.env.openExternal(vscode.Uri.parse("https://open.spotify.com"));
-        this.state.lastAction = "Opened Spotify for manual play / pause.";
+        await vscode.env.openExternal(
+          vscode.Uri.parse("https://open.spotify.com"),
+        );
       }
       this.state.error = "";
       this.pushState();
       this.scheduleRefresh(180);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.state.lastAction = "Basic mode fallback failed.";
       this.state.error = message;
       this.pushState();
       vscode.window.showErrorMessage(message);
@@ -1542,10 +1774,10 @@ class SpotifyPlayerController {
 
   async basicControlFallback(action) {
     const mapping = {
-      "next-track": { key: 0xB0, label: "next-track" },
-      "previous-track": { key: 0xB1, label: "previous-track" },
-      "volume-up": { key: 0xAF, label: "volume-up" },
-      "volume-down": { key: 0xAE, label: "volume-down" }
+      "next-track": { key: 0xb0, label: "next-track" },
+      "previous-track": { key: 0xb1, label: "previous-track" },
+      "volume-up": { key: 0xaf, label: "volume-up" },
+      "volume-down": { key: 0xae, label: "volume-down" },
     };
 
     const target = mapping[action];
@@ -1555,7 +1787,6 @@ class SpotifyPlayerController {
 
     try {
       if (isWindows()) {
-        this.state.lastAction = `Sending ${target.label} to Spotify Desktop...`;
         this.state.error = "";
         this.pushState();
         if (action === "next-track" || action === "previous-track") {
@@ -1567,10 +1798,10 @@ class SpotifyPlayerController {
         } else {
           await this.sendWindowsMediaKey(target.key);
         }
-        this.state.lastAction = `Sent ${target.label} to Spotify Desktop.`;
       } else {
-        await vscode.env.openExternal(vscode.Uri.parse("https://open.spotify.com"));
-        this.state.lastAction = `Opened Spotify for ${target.label}.`;
+        await vscode.env.openExternal(
+          vscode.Uri.parse("https://open.spotify.com"),
+        );
       }
       this.state.error = "";
       this.pushState();
@@ -1578,7 +1809,6 @@ class SpotifyPlayerController {
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.state.lastAction = `Basic mode fallback failed for ${target.label}.`;
       this.state.error = message;
       this.pushState();
       vscode.window.showErrorMessage(message);
@@ -1588,59 +1818,62 @@ class SpotifyPlayerController {
 
   async dispatchAction(action) {
     try {
-      const playbackActions = new Set(["play-pause", "next-track", "previous-track", "volume-up", "volume-down"]);
+      const playbackActions = new Set([
+        "play-pause",
+        "next-track",
+        "previous-track",
+        "volume-up",
+        "volume-down",
+      ]);
       if (playbackActions.has(action)) {
         if (this.state.canControlPlayback) {
           switch (action) {
             case "play-pause": {
-              // Use local state instead of fetching currentPlayback() — saves ~200-400ms
               const isPlaying = this.state.playing;
               if (isPlaying) {
                 this.state.playing = false;
-                this.state.lastAction = "Pausing...";
                 this.state.error = "";
                 this.pushState();
                 await this.api("/me/player/pause", { method: "PUT" });
-                this.state.lastAction = "Paused.";
               } else {
                 this.state.playing = true;
-                this.state.lastAction = "Playing...";
                 this.state.error = "";
                 this.pushState();
-                // Send play without specifying device_id — Spotify routes to active device.
-                // If no device is active, Spotify returns 403 and we surface the error.
                 await this.api("/me/player/play", { method: "PUT" });
-                this.state.lastAction = "Playing.";
               }
               this.pushState();
               this.scheduleRefresh(180);
               return;
             }
             case "next-track":
-              // No activeDevice() call needed — Spotify handles routing
-              this.state.lastAction = "Skipping...";
               this.state.error = "";
               this.pushState();
               await this.api("/me/player/next", { method: "POST" });
-              this.state.lastAction = "Skipped to next track.";
               this.pushState();
               this.scheduleRefresh(220);
               return;
             case "previous-track":
-              // No activeDevice() call needed — Spotify handles routing
-              this.state.lastAction = "Going back...";
               this.state.error = "";
               this.pushState();
               await this.api("/me/player/previous", { method: "POST" });
-              this.state.lastAction = "Went to previous track.";
               this.pushState();
               this.scheduleRefresh(220);
               return;
             case "volume-up":
-              await this.setSpotifyVolume(Math.min(100, (this.state.deviceVolume || this.state.volume || 0) + 10));
+              await this.setSpotifyVolume(
+                Math.min(
+                  100,
+                  (this.state.deviceVolume || this.state.volume || 0) + 10,
+                ),
+              );
               return;
             case "volume-down":
-              await this.setSpotifyVolume(Math.max(0, (this.state.deviceVolume || this.state.volume || 0) - 10));
+              await this.setSpotifyVolume(
+                Math.max(
+                  0,
+                  (this.state.deviceVolume || this.state.volume || 0) - 10,
+                ),
+              );
               return;
             default:
               break;
@@ -1652,11 +1885,21 @@ class SpotifyPlayerController {
           return;
         }
         if (action === "volume-up") {
-          await this.setVolume(Math.min(100, (this.state.deviceVolume || this.state.volume || 0) + 10));
+          await this.setVolume(
+            Math.min(
+              100,
+              (this.state.deviceVolume || this.state.volume || 0) + 10,
+            ),
+          );
           return;
         }
         if (action === "volume-down") {
-          await this.setVolume(Math.max(0, (this.state.deviceVolume || this.state.volume || 0) - 10));
+          await this.setVolume(
+            Math.max(
+              0,
+              (this.state.deviceVolume || this.state.volume || 0) - 10,
+            ),
+          );
           return;
         }
         await this.basicControlFallback(action);
@@ -1666,11 +1909,15 @@ class SpotifyPlayerController {
       switch (action) {
         case "toggle-voice":
           this.state.voiceActive = !this.state.voiceActive;
-          this.state.lastAction = this.state.voiceActive ? "Voice control active" : "Voice control paused";
+          this.state.lastAction = this.state.voiceActive
+            ? "Voice control active"
+            : "Voice control paused";
           this.broadcastMessage({ type: "control", action: "toggle-voice" });
           break;
         case "open-external":
-          await vscode.env.openExternal(vscode.Uri.parse("https://open.spotify.com"));
+          await vscode.env.openExternal(
+            vscode.Uri.parse("https://open.spotify.com"),
+          );
           this.state.lastAction = "Opened Spotify in browser";
           break;
         case "mini-mode":
@@ -1715,7 +1962,9 @@ class SpotifyPlayerController {
 
       const [playbackState, devices] = await Promise.all([
         this.currentPlayback().catch(() => null),
-        this.state.canControlPlayback ? this.devices().catch(() => []) : Promise.resolve([])
+        this.state.canControlPlayback
+          ? this.devices().catch(() => [])
+          : Promise.resolve([]),
       ]);
 
       // Only hit the fallback endpoints when currentPlayback() returned nothing
@@ -1724,40 +1973,68 @@ class SpotifyPlayerController {
       if (!playbackState) {
         [trackState, recentState] = await Promise.all([
           this.currentTrack().catch(() => null),
-          this.recentlyPlayed().catch(() => null)
+          this.recentlyPlayed().catch(() => null),
         ]);
       }
 
-      const basicState = playbackState || trackState ? null : await this.readWindowsMediaSession().catch(() => null);
-      const basicPlayback = basicState ? {
-        item: {
-          name: basicState.title,
-          artists: [{ name: basicState.artist }],
-          album: { images: basicState.albumArt ? [{ url: basicState.albumArt }] : [] }
-        },
-        is_playing: basicState.playing,
-        device: {
-          name: basicState.deviceName,
-          type: basicState.deviceType,
-          volume_percent: this.state.deviceVolume
-        },
-        source: basicState.source
-      } : null;
-      const playback = playbackState || trackState || basicPlayback || recentState;
-      const source = playbackState ? "current-playback" : (trackState ? "currently-playing" : (basicPlayback ? "windows-media-session" : (recentState ? "recently-played" : "none")));
+      const basicState =
+        playbackState || trackState
+          ? null
+          : await this.readWindowsMediaSession().catch(() => null);
+      const basicPlayback = basicState
+        ? {
+            item: {
+              name: basicState.title,
+              artists: [{ name: basicState.artist }],
+              album: {
+                images: basicState.albumArt
+                  ? [{ url: basicState.albumArt }]
+                  : [],
+              },
+            },
+            is_playing: basicState.playing,
+            device: {
+              name: basicState.deviceName,
+              type: basicState.deviceType,
+              volume_percent: this.state.deviceVolume,
+            },
+            source: basicState.source,
+          }
+        : null;
+      const playback =
+        playbackState || trackState || basicPlayback || recentState;
+      const source = playbackState
+        ? "current-playback"
+        : trackState
+          ? "currently-playing"
+          : basicPlayback
+            ? "windows-media-session"
+            : recentState
+              ? "recently-played"
+              : "none";
       const device = this.pickDevice(devices);
       const deviceVolume = this.state.canControlPlayback
-        ? (typeof device?.volume_percent === "number" ? device.volume_percent : this.state.deviceVolume)
-        : (typeof playback?.device?.volume_percent === "number" ? playback.device.volume_percent : this.state.deviceVolume);
-      this.state.product = this.session.user?.product || this.state.product || "";
-      const productLabel = this.state.product === "premium"
-        ? "Premium account"
-        : this.state.product === "free"
-          ? "Free account"
-          : (this.state.authenticated && !this.session.user ? "Checking status..." : "Spotify account");
+        ? typeof device?.volume_percent === "number"
+          ? device.volume_percent
+          : this.state.deviceVolume
+        : typeof playback?.device?.volume_percent === "number"
+          ? playback.device.volume_percent
+          : this.state.deviceVolume;
+      this.state.product =
+        this.session.user?.product || this.state.product || "";
+      const productLabel =
+        this.state.product === "premium"
+          ? "Premium account"
+          : this.state.product === "free"
+            ? "Free account"
+            : this.state.authenticated && !this.session.user
+              ? "Checking status..."
+              : "Spotify account";
       const authLabel = this.session.user?.display_name
         ? `Connected as ${this.session.user.display_name} - ${productLabel}`
-        : (this.state.authenticated && !this.session.user ? `Connected - ${productLabel}` : `Connected to Spotify - ${productLabel}`);
+        : this.state.authenticated && !this.session.user
+          ? `Connected - ${productLabel}`
+          : `Connected to Spotify - ${productLabel}`;
       this.state.authenticated = true;
       this.state.authStatus = authLabel;
       this.state.authInProgress = false;
@@ -1772,19 +2049,27 @@ class SpotifyPlayerController {
           trackAlbumArt(trackState?.item),
           trackAlbumArt(recentState?.item),
           track.albumArt,
-          basicState?.albumArt
+          basicState?.albumArt,
         );
         if (preferredAlbumArt) {
-          artSource = preferredAlbumArt.startsWith("data:image/") ? "windows-thumbnail" : "spotify-image";
+          artSource = preferredAlbumArt.startsWith("data:image/")
+            ? "windows-thumbnail"
+            : "spotify-image";
         }
         if (!preferredAlbumArt && this.session.accessToken) {
-          preferredAlbumArt = await this.searchTrackArtwork(track.title, track.artist).catch(() => "");
+          preferredAlbumArt = await this.searchTrackArtwork(
+            track.title,
+            track.artist,
+          ).catch(() => "");
           if (preferredAlbumArt) {
             artSource = "spotify-search";
           }
         }
         if (!preferredAlbumArt) {
-          preferredAlbumArt = await this.searchPublicTrackArtwork(track.title, track.artist).catch(() => "");
+          preferredAlbumArt = await this.searchPublicTrackArtwork(
+            track.title,
+            track.artist,
+          ).catch(() => "");
           if (preferredAlbumArt) {
             artSource = "public-search";
           }
@@ -1793,16 +2078,38 @@ class SpotifyPlayerController {
         this.state.title = track.title;
         this.state.artist = track.artist;
         this.state.albumArt = preferredAlbumArt;
-        this.state.progressMs = Math.max(0, Number(playback.progress_ms) || Number(trackState?.progress_ms) || Number(playbackState?.progress_ms) || Number(basicState?.progressMs) || 0);
-        this.state.durationMs = Math.max(0, Number(playback.item?.duration_ms) || Number(trackState?.item?.duration_ms) || Number(playbackState?.item?.duration_ms) || Number(basicState?.durationMs) || 0);
+        this.state.progressMs = Math.max(
+          0,
+          Number(playback.progress_ms) ||
+            Number(trackState?.progress_ms) ||
+            Number(playbackState?.progress_ms) ||
+            Number(basicState?.progressMs) ||
+            0,
+        );
+        this.state.durationMs = Math.max(
+          0,
+          Number(playback.item?.duration_ms) ||
+            Number(trackState?.item?.duration_ms) ||
+            Number(playbackState?.item?.duration_ms) ||
+            Number(basicState?.durationMs) ||
+            0,
+        );
         this.state.progressLabel = formatDuration(this.state.progressMs);
         this.state.durationLabel = formatDuration(this.state.durationMs);
-        this.state.volume = typeof playback.device?.volume_percent === "number" ? playback.device.volume_percent : this.state.volume;
-        this.state.deviceVolume = typeof playback.device?.volume_percent === "number" ? playback.device.volume_percent : deviceVolume;
-        this.state.deviceName = playback.device?.name || device?.name || "No active device";
+        this.state.volume =
+          typeof playback.device?.volume_percent === "number"
+            ? playback.device.volume_percent
+            : this.state.volume;
+        this.state.deviceVolume =
+          typeof playback.device?.volume_percent === "number"
+            ? playback.device.volume_percent
+            : deviceVolume;
+        this.state.deviceName =
+          playback.device?.name || device?.name || "No active device";
         this.state.deviceType = playback.device?.type || device?.type || "";
         if (playback.source === "recently-played") {
-          this.state.lastAction = "Showing recently played track because live playback data was unavailable.";
+          this.state.lastAction =
+            "Showing recently played track because live playback data was unavailable.";
         }
         this.state.debugSummary = [
           `source=${source}`,
@@ -1812,7 +2119,7 @@ class SpotifyPlayerController {
           `art=${this.state.albumArt ? "yes" : "no"}`,
           `artSource=${artSource}`,
           `device=${this.state.deviceName || "none"}`,
-          `tier=${this.state.accountMode}`
+          `tier=${this.state.accountMode}`,
         ].join(" | ");
       } else {
         this.state.playing = false;
@@ -1823,7 +2130,8 @@ class SpotifyPlayerController {
         this.state.durationMs = 0;
         this.state.progressLabel = "0:00";
         this.state.durationLabel = "0:00";
-        this.state.deviceName = device?.name || playback?.device?.name || "No active device";
+        this.state.deviceName =
+          device?.name || playback?.device?.name || "No active device";
         this.state.deviceType = device?.type || playback?.device?.type || "";
         this.state.deviceVolume = deviceVolume;
         this.state.debugSummary = `source=${source} | no playable track payload | tier=${this.state.accountMode}`;
@@ -1845,9 +2153,21 @@ class SpotifyPlayerController {
   }
 
   broadcastMessage(message) {
+    const failedWebviews = [];
     for (const webview of this.webviews) {
-      webview.postMessage(message);
+      try {
+        webview.postMessage(message);
+      } catch (error) {
+        // Webview might be disposed or disconnected
+        console.warn(
+          "Failed to broadcast to webview:",
+          error instanceof Error ? error.message : String(error),
+        );
+        failedWebviews.push(webview);
+      }
     }
+    // Clean up failed webviews from the set to prevent future errors
+    failedWebviews.forEach((webview) => this.webviews.delete(webview));
   }
 
   serializedState() {
@@ -1878,21 +2198,38 @@ class SpotifyPlayerController {
       debugSummary: this.state.debugSummary,
       mode: this.state.mode,
       lastAction: this.state.lastAction,
-      error: this.state.error
+      error: this.state.error,
     };
   }
 
   pushState() {
-    const payload = { type: "sync-state", state: this.serializedState() };
-    this.webviews.forEach((webview) => webview.postMessage(payload));
-    this.statusBar.text = `$(music) ${this.state.playing ? "Playing" : "Paused"}: ${this.state.title} - ${this.state.artist}`;
-    this.statusBar.tooltip = [
-      this.state.authStatus,
-      this.state.tierMessage,
-      this.state.deviceName,
-      `Volume: ${this.state.deviceVolume || this.state.volume}%`,
-      this.state.lastAction
-    ].join("\n");
+    if (this._pushTimer) return;
+    this._pushTimer = setTimeout(() => {
+      try {
+        const payload = { type: "sync-state", state: this.serializedState() };
+        this.broadcastMessage(payload);
+
+        // Update status bar safely
+        if (this.statusBar) {
+          this.statusBar.text = `$(music) ${this.state.playing ? "Playing" : "Paused"}: ${this.state.title || "No song"} - ${this.state.artist || "Spotify"}`;
+          this.statusBar.tooltip = [
+            this.state.authStatus || "Not connected",
+            this.state.tierMessage || "Loading tier info...",
+            this.state.deviceName || "No device",
+            `Volume: ${this.state.deviceVolume || this.state.volume || 0}%`,
+            this.state.lastAction || "Ready",
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
+      } catch (error) {
+        console.error(
+          "Error during pushState:",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      this._pushTimer = null;
+    }, 50);
   }
 
   openMiniPlayer() {
@@ -1911,9 +2248,9 @@ class SpotifyPlayerController {
         localResourceRoots: [
           vscode.Uri.file(path.dirname(this.templatePath)),
           vscode.Uri.file(path.dirname(this.stylePath)),
-          vscode.Uri.file(path.dirname(this.scriptPath))
-        ]
-      }
+          vscode.Uri.file(path.dirname(this.scriptPath)),
+        ],
+      },
     );
 
     this.panel = panel;
@@ -1934,8 +2271,8 @@ class SpotifyPlayerController {
       localResourceRoots: [
         vscode.Uri.file(path.dirname(this.templatePath)),
         vscode.Uri.file(path.dirname(this.stylePath)),
-        vscode.Uri.file(path.dirname(this.scriptPath))
-      ]
+        vscode.Uri.file(path.dirname(this.scriptPath)),
+      ],
     };
 
     this.webviews.add(webview);
@@ -1973,17 +2310,30 @@ class SpotifyPlayerController {
       return;
     }
 
-    if (message.type === "player-state" && message.state && typeof message.state.volume === "number") {
-      void this.setVolume(Math.max(0, Math.min(100, Math.round(message.state.volume))));
+    if (
+      message.type === "player-state" &&
+      message.state &&
+      typeof message.state.volume === "number"
+    ) {
+      void this.setVolume(
+        Math.max(0, Math.min(100, Math.round(message.state.volume))),
+      );
       return;
     }
 
-    if (message.type === "player-state" && message.state && typeof message.state.seekMs === "number") {
+    if (
+      message.type === "player-state" &&
+      message.state &&
+      typeof message.state.seekMs === "number"
+    ) {
       void this.seekPosition(message.state.seekMs);
       return;
     }
 
-    if (message.type === "voice-command" && typeof message.command === "string") {
+    if (
+      message.type === "voice-command" &&
+      typeof message.command === "string"
+    ) {
       const normalized = message.command.toLowerCase();
       if (normalized.includes("play") || normalized.includes("pause")) {
         void this.dispatchAction("play-pause");
@@ -2004,7 +2354,9 @@ class SpotifyPlayerController {
 
     if (message.type === "voice-state" && typeof message.active === "boolean") {
       this.state.voiceActive = message.active;
-      this.state.lastAction = message.active ? "Voice control active" : "Voice control paused";
+      this.state.lastAction = message.active
+        ? "Voice control active"
+        : "Voice control paused";
       this.pushState();
     }
   }
@@ -2024,5 +2376,5 @@ function deactivate() {
 
 module.exports = {
   activate,
-  deactivate
+  deactivate,
 };

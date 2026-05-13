@@ -1,1 +1,5 @@
 node_modules
+AUDIT_REPORT_v0.3.0.md
+FIXES_QUICK_REFERENCE.md
+*.vsix
+.DS_Store
